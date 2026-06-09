@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1f6f43">
+<title>PivotPump — Fertigation Calculator</title>
+<style>
+  :root{
+    --green:#1f6f43; --green-dk:#14512f; --green-lt:#e6f2ec;
+    --amber:#b45309; --red:#b91c1c; --ok:#15803d;
+    --bg:#f4f6f5; --card:#ffffff; --line:#d6ddd8; --text:#1c2620; --muted:#5b6b62;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--text);line-height:1.4;-webkit-text-size-adjust:100%}
+  header{background:var(--green);color:#fff;padding:14px 16px;position:sticky;top:0;z-index:10;
+    box-shadow:0 2px 6px rgba(0,0,0,.15)}
+  header h1{margin:0;font-size:19px;letter-spacing:.3px}
+  header .sub{font-size:12px;opacity:.85;margin-top:2px}
+  .wrap{max-width:680px;margin:0 auto;padding:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;
+    box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .card h2{margin:0 0 10px;font-size:15px;color:var(--green-dk);display:flex;align-items:center;gap:8px}
+  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px;font-weight:600}
+  .hint{font-weight:400;color:var(--muted);font-size:11px}
+  input,select,textarea{width:100%;padding:11px 12px;font-size:16px;border:1px solid var(--line);border-radius:9px;
+    background:#fff;color:var(--text);appearance:none}
+  textarea{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.35;resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px var(--green-lt)}
+  .row{display:flex;gap:10px}
+  .row>div{flex:1}
+  .pivotbar{display:flex;gap:10px;align-items:flex-end}
+  .pivotbar>div:first-child{flex:1}
+  button{font-family:inherit;font-size:14px;font-weight:600;border-radius:9px;border:1px solid transparent;
+    padding:11px 14px;cursor:pointer;background:var(--green);color:#fff}
+  button.ghost{background:#fff;color:var(--green-dk);border-color:var(--line)}
+  button.sm{padding:9px 11px;font-size:13px}
+  button.danger{background:#fff;color:var(--red);border-color:#e6c4c4}
+  button.tiny{padding:7px 10px;font-size:12px}
+  .tabs{display:flex;gap:6px;margin-bottom:14px;background:#e9efeb;padding:5px;border-radius:11px}
+  .tabs button{flex:1;background:transparent;color:var(--green-dk);border:none;padding:10px 6px;font-size:13px}
+  .tabs button.active{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .result{margin-top:12px;border-radius:10px;padding:14px;background:var(--green-lt);border:1px solid #c6e0d2}
+  .result .big{font-size:30px;font-weight:800;color:var(--green-dk);line-height:1.1}
+  .result .biglabel{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-top:12px}
+  .grid2 .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+  .grid2 .v{font-size:16px;font-weight:600;margin-top:1px}
+  .verdict{border-radius:10px;padding:14px;margin-top:12px;font-size:15px;font-weight:600}
+  .verdict.ok{background:#e7f6ec;border:1px solid #b6e0c4;color:var(--ok)}
+  .verdict.warn{background:#fdf3e2;border:1px solid #f0d8a8;color:var(--amber)}
+  .verdict.bad{background:#fbe9e9;border:1px solid #f0bcbc;color:var(--red)}
+  .verdict .fix{font-weight:400;color:var(--text);font-size:14px;margin-top:8px}
+  .verdict .fix b{color:var(--green-dk)}
+  .editor{border-top:1px dashed var(--line);margin-top:12px;padding-top:12px}
+  .editor[hidden]{display:none}
+  .editbtns{display:flex;gap:10px;margin-top:14px}
+  .muted{color:var(--muted);font-size:12px}
+  .note{font-size:12px;color:var(--muted);margin-top:10px}
+  details{margin-top:10px}
+  summary{cursor:pointer;font-size:13px;color:var(--green-dk);font-weight:600}
+  .pill{display:inline-block;background:#fff;border:1px solid var(--line);border-radius:20px;padding:2px 9px;
+    font-size:11px;color:var(--muted);margin-left:auto;font-weight:600}
+  .pumprow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .pumprow .nm{flex:2}
+  .pumprow .cap{flex:1}
+  .pumprow .unit{font-size:12px;color:var(--muted);white-space:nowrap}
+  .pumprow input{padding:9px 10px}
+  .collapsed > .body{display:none}
+  .secthead{display:flex;align-items:center;gap:8px;cursor:pointer}
+  .secthead .chev{margin-left:auto;color:var(--muted);transition:transform .15s}
+  .collapsed .chev{transform:rotate(-90deg)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🌾 PivotPump</h1>
+  <div class="sub">Fertigation calculator — match pump rate to pivot speed</div>
+</header>
+
+<div class="wrap">
+
+  <!-- PIVOT SELECTOR / EDITOR -->
+  <div class="card">
+    <h2>Pivot <span id="pivotPill" class="pill"></span></h2>
+    <div class="pivotbar">
+      <div>
+        <label>Choose pivot</label>
+        <select id="pivotSel"></select>
+      </div>
+      <button class="ghost sm" id="editToggle">Edit</button>
+      <button class="ghost sm" id="addBtn">+ New</button>
+    </div>
+
+    <div class="editor" id="editor" hidden>
+      <div class="row">
+        <div>
+          <label>Name</label>
+          <input id="e_name" type="text" placeholder="e.g. East Young">
+        </div>
+        <div>
+          <label>Speed is set by</label>
+          <select id="e_mode">
+            <option value="timer">Timer %</option>
+            <option value="depth">Target depth (inches)</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label id="e_callabel"></label>
+          <input id="e_cal" type="number" step="any" inputmode="decimal">
+        </div>
+        <div>
+          <label>Degrees in a pass <span class="hint">(usually 360)</span></label>
+          <input id="e_deg" type="number" step="any" inputmode="decimal">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Fertilizer pump</label>
+          <select id="e_pump"></select>
+        </div>
+        <div>
+          <label>Default tank (gal)</label>
+          <input id="e_tank" type="number" step="any" inputmode="decimal">
+        </div>
+      </div>
+      <details>
+        <summary>Optional: water precip readout</summary>
+        <div class="row" style="margin-top:8px">
+          <div>
+            <label>Pivot flow (GPM)</label>
+            <input id="e_gpm" type="number" step="any" inputmode="decimal">
+          </div>
+          <div>
+            <label>Field size (acres)</label>
+            <input id="e_acres" type="number" step="any" inputmode="decimal">
+          </div>
+        </div>
+      </details>
+      <div class="editbtns">
+        <button id="saveBtn">Save pivot</button>
+        <button class="ghost" id="cancelBtn">Cancel</button>
+        <button class="danger" id="deleteBtn" style="margin-left:auto">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PUMP CONFIGURATION -->
+  <div class="card collapsed" id="pumpCard">
+    <div class="secthead" id="pumpHead">
+      <h2 style="margin:0">⚙️ Pumps</h2>
+      <span class="pill" id="pumpCountPill"></span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="body">
+      <p class="muted" style="margin-top:10px">Each pump's <b>max capacity</b> is the gallons/hour it injects at 100%. The setting is a percentage of that, so injection rate = max capacity × setting% ÷ 100. Edit a pump here and every pivot using it updates. Assign a pump to a pivot in the pivot's Edit panel.</p>
+      <div id="pumpList"></div>
+      <button class="ghost tiny" id="addPumpBtn" style="margin-top:6px">+ Add pump</button>
+    </div>
+  </div>
+
+  <!-- BACKUP / RESTORE -->
+  <div class="card collapsed" id="backupCard">
+    <div class="secthead" id="backupHead">
+      <h2 style="margin:0">💾 Backup / Restore</h2>
+      <span class="chev">▾</span>
+    </div>
+    <div class="body">
+      <p class="muted" style="margin-top:10px">Your pumps &amp; pivots are saved <b>only in this browser</b> — clear it or switch phones and they're gone. Tap <b>Copy setup</b>, then paste the text into a note or email it to yourself. To restore (or move to a new phone), paste that text back in and tap <b>Restore</b>.</p>
+      <textarea id="backupText" rows="5" placeholder="Your backup text appears here when you tap Copy setup — or paste a saved backup here to Restore."></textarea>
+      <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
+        <button class="ghost sm" id="copyBackup">Copy setup</button>
+        <button class="sm" id="restoreBackup">Restore</button>
+      </div>
+      <div id="backupMsg" class="muted" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- MODE TABS -->
+  <div class="tabs">
+    <button data-mode="speed" class="active">Find pivot speed</button>
+    <button data-mode="pump">Find pump setting</button>
+    <button data-mode="track">On-track check</button>
+  </div>
+
+  <!-- MODE: FIND PIVOT SPEED -->
+  <div class="card mode" data-mode="speed">
+    <h2>What speed should I run the pivot?</h2>
+    <p class="muted">Given the fertilizer in the tank and the pump setting you want to run, this finds the pivot speed that empties the tank exactly as the pass finishes.</p>
+    <div class="row">
+      <div>
+        <label>Fertilizer in tank (gal)</label>
+        <input id="s_tank" type="number" step="any" inputmode="decimal">
+      </div>
+      <div>
+        <label>Degrees to cover</label>
+        <input id="s_deg" type="number" step="any" inputmode="decimal">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Pump setting (%)</label>
+        <input id="s_setting" type="number" step="any" inputmode="decimal" value="50">
+      </div>
+      <div>
+        <label id="s_caplabel">Pump max capacity <span class="hint">(GPH @ 100%)</span></label>
+        <input id="s_size" type="number" step="any" inputmode="decimal">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Start time <span class="hint">(optional — blank = now)</span></label>
+        <input id="s_start" type="datetime-local">
+      </div>
+    </div>
+    <div id="speedResult"></div>
+  </div>
+
+  <!-- MODE: FIND PUMP SETTING -->
+  <div class="card mode" data-mode="pump" hidden>
+    <h2>What pump setting should I use?</h2>
+    <p class="muted">Given the fertilizer in the tank and the pivot speed you're running, this finds the pump setting that empties the tank exactly as the pass finishes.</p>
+    <div class="row">
+      <div>
+        <label>Fertilizer in tank (gal)</label>
+        <input id="p_tank" type="number" step="any" inputmode="decimal">
+      </div>
+      <div>
+        <label>Degrees to cover</label>
+        <input id="p_deg" type="number" step="any" inputmode="decimal">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label id="p_speedlabel">Pivot speed</label>
+        <input id="p_speed" type="number" step="any" inputmode="decimal">
+      </div>
+      <div>
+        <label id="p_caplabel">Pump max capacity <span class="hint">(GPH @ 100%)</span></label>
+        <input id="p_size" type="number" step="any" inputmode="decimal">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Start time <span class="hint">(optional — blank = now)</span></label>
+        <input id="p_start" type="datetime-local">
+      </div>
+    </div>
+    <div id="pumpResult"></div>
+  </div>
+
+  <!-- MODE: ON-TRACK CHECK -->
+  <div class="card mode" data-mode="track" hidden>
+    <h2>Are we on track to finish?</h2>
+    <p class="muted">This measures your <b>actual</b> pace — gallons really used vs. degrees really covered — so it works even when the pump or pivot speed are off. No need to trust the dial settings.</p>
+    <div class="row">
+      <div>
+        <label>Starting fertilizer (gal) <span class="hint">at start of pass</span></label>
+        <input id="t_orig" type="number" step="any" inputmode="decimal">
+      </div>
+      <div>
+        <label>Fertilizer left now (gal)</label>
+        <input id="t_tank" type="number" step="any" inputmode="decimal">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Degrees in the whole pass</label>
+        <input id="t_total" type="number" step="any" inputmode="decimal">
+      </div>
+      <div>
+        <label>Degrees left now</label>
+        <input id="t_deg" type="number" step="any" inputmode="decimal">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label id="t_speedlabel">Current pivot setting</label>
+        <input id="t_speed" type="number" step="any" inputmode="decimal">
+      </div>
+      <div>
+        <label>Current pump setting (%)</label>
+        <input id="t_setting" type="number" step="any" inputmode="decimal">
+      </div>
+    </div>
+    <div id="trackResult"></div>
+
+    <details id="accDetails">
+      <summary>Check pump &amp; pivot speed accuracy (optional)</summary>
+      <p class="muted" style="margin-top:8px">Add how long it's been running and this compares your <b>actual</b> pump rate and pivot speed against what the dials above say — so you can see how far off each one is.</p>
+      <div class="row">
+        <div>
+          <label>Hours run so far</label>
+          <input id="t_hours" type="number" step="any" inputmode="decimal">
+        </div>
+        <div>
+          <label id="t_caplabel">Pump max capacity <span class="hint">(GPH @ 100%)</span></label>
+          <input id="t_size" type="number" step="any" inputmode="decimal">
+        </div>
+      </div>
+      <div id="accResult"></div>
+    </details>
+  </div>
+
+  <p class="note">PivotPump v1 · pivots &amp; pumps are saved in this browser. Math mirrors the HJV pivot spreadsheet: injection rate = pump max capacity × setting% ÷ 100, and "finished properly" means the tank empties as the pass completes. Timer pivots: pass time = hrs@100% ÷ (timer%/100). Depth pivots: pass time = hrs/inch × target inches.</p>
+</div>
+
+<script>
+"use strict";
+const ACRE_FT_GAL = 325851;
+
+/* ---------- seeds ----------
+   pivot.mode "timer": cal = hours for a full 360° pass at 100% timer
+   pivot.mode "depth": cal = hours to apply 1 inch over a full 360° pass
+   pivot.pump = index into pumps[];  pump.cap = GPH at a 1.0 setting          */
+const SEED_PUMPS = [
+  {name:"Switzer pump",    cap:36},
+  {name:"Spanjer pump",    cap:55},
+  {name:"HBF pump",        cap:55},
+  {name:"East Young pump", cap:30},
+  {name:"West Young pump", cap:18},
+];
+const SEED_PIVOTS = [
+  {name:"Switzer",    mode:"depth", cal:101,    deg:338, pump:0, tank:1450, gpm:550, acres:117,   defSpeed:0.30},
+  {name:"Spanjer",    mode:"depth", cal:107.93, deg:360, pump:1, tank:1450, gpm:550, acres:117.6, defSpeed:0.24},
+  {name:"HBF",        mode:"depth", cal:76.52,  deg:360, pump:2, tank:1450, gpm:750, acres:126.9, defSpeed:0.30},
+  {name:"East Young", mode:"timer", cal:9.72,   deg:360, pump:3, tank:3000, gpm:425, acres:122,   defSpeed:11},
+  {name:"West Young", mode:"timer", cal:14.88,  deg:360, pump:4, tank:3000, gpm:500, acres:121.4, defSpeed:18},
+];
+const K_PUMPS="pivotpump.pumps.v1", K_PIVOTS="pivotpump.pivots.v3", K_SEL="pivotpump.selected.v3", K_OLD="pivotpump.pivots.v2";
+
+/* ---------- load with migration from the old per-pivot-size format ---------- */
+let pumps, pivots, selIdx;
+(function load(){
+  let sp=null, sv=null;
+  try{ sp=JSON.parse(localStorage.getItem(K_PUMPS)); }catch(e){}
+  try{ sv=JSON.parse(localStorage.getItem(K_PIVOTS)); }catch(e){}
+  if(Array.isArray(sp)&&sp.length&&Array.isArray(sv)&&sv.length){ pumps=sp; pivots=sv; }
+  else {
+    // try migrating v2 pivots (which carried a per-pivot `size`)
+    let old=null; try{ old=JSON.parse(localStorage.getItem(K_OLD)); }catch(e){}
+    if(Array.isArray(old)&&old.length){
+      pumps = old.map(p=>({name:(p.name||"Pump")+" pump", cap:p.size||0}));
+      pivots = old.map((p,i)=>({name:p.name,mode:p.mode||"timer",cal:p.cal,deg:p.deg,pump:i,
+        tank:p.tank,gpm:p.gpm,acres:p.acres,defSpeed:p.defSpeed!=null?p.defSpeed:(p.mode==="depth"?0.30:15)}));
+    } else {
+      pumps = JSON.parse(JSON.stringify(SEED_PUMPS));
+      pivots = JSON.parse(JSON.stringify(SEED_PIVOTS));
+    }
+    saveAll();
+  }
+  selIdx = parseInt(localStorage.getItem(K_SEL)||"0",10)||0;
+  if(selIdx>=pivots.length) selIdx=0;
+})();
+function saveAll(){ try{
+  localStorage.setItem(K_PUMPS,JSON.stringify(pumps));
+  localStorage.setItem(K_PIVOTS,JSON.stringify(pivots));
+  localStorage.setItem(K_SEL,String(selIdx));
+}catch(e){} }
+
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const num = el => { const v = parseFloat(el.value); return isFinite(v)? v : NaN; };
+const fmt = (n,d=2)=> isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:0}) : "—";
+function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function pumpCap(p){ const pu=pumps[p.pump]; return pu? pu.cap : NaN; }
+function pumpName(p){ const pu=pumps[p.pump]; return pu? pu.name : "—"; }
+
+function hoursToDHM(h){
+  if(!isFinite(h)||h<0) return "—";
+  const days=Math.floor(h/24), rem=h-days*24, hr=Math.floor(rem), min=Math.round((rem-hr)*60);
+  let s=""; if(days) s+=days+"d "; s+=hr+"h"; if(min) s+=" "+min+"m"; return s;
+}
+function finishStamp(h,startMs){
+  if(!isFinite(h)||h<0) return "—";
+  const base=(startMs!=null&&isFinite(startMs))?startMs:Date.now();
+  const d=new Date(base+h*3600*1000);
+  return d.toLocaleString(undefined,{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+}
+function startMsOf(id){ const v=$(id).value; if(!v) return null; const t=new Date(v).getTime(); return isFinite(t)?t:null; }
+
+// plausibility checks for the predictive modes — flag likely typos / bad calibration
+function plausibility({rate,hrs,depth,timer,pumpPct}){
+  const w=[];
+  if(isFinite(rate)&&rate>0&&rate<0.5) w.push(`Injection rate is very low (${fmt(rate,2)} GPH) — check the tank gallons and pump setting.`);
+  if(isFinite(hrs)&&hrs>336) w.push(`This pass would take over 2 weeks (${fmt(hrs/24,1)} days) — check the calibration and inputs.`);
+  if(isFinite(depth)&&(depth<0.1||depth>1.0)) w.push(`Application depth ${fmt(depth,2)}" is outside the usual 0.1–1.0" — double-check inputs.`);
+  if(isFinite(timer)&&timer>0&&timer<1) w.push(`Pivot timer ${fmt(timer,1)}% is extremely slow — double-check inputs.`);
+  if(isFinite(pumpPct)&&pumpPct>0&&pumpPct<0.5) w.push(`Pump setting is nearly zero (${fmt(pumpPct,1)}%) — check inputs.`);
+  return w.length?`<div class="verdict warn" style="margin-top:12px">⚠️ ${w.join("<br>")}</div>`:"";
+}
+
+/* ---------- core model (everything reduces to hours-per-pass) ---------- */
+function hrsForSpeed(p,speedVal,deg){
+  if(p.mode==="timer") return p.cal*100/speedVal*(deg/360);
+  return p.cal*speedVal*(deg/360);
+}
+function speedForHrs(p,hrs,deg){
+  if(p.mode==="timer") return p.cal*100*deg/(hrs*360);
+  return hrs/(p.cal*(deg/360));
+}
+const minPerDeg=(h,deg)=>h*60/deg;
+function precipInches(gpm,acres,passHrs){
+  if(!isFinite(gpm)||!isFinite(acres)||!acres||!gpm) return NaN;
+  return (gpm*60*passHrs*12)/(ACRE_FT_GAL*acres);
+}
+const isTimer=p=>p.mode==="timer";
+const speedFieldLabel=p=>isTimer(p)?"Pivot timer (%)":"Target depth (inches)";
+function speedStr(p,v){ return isTimer(p)?fmt(v,1)+"% timer":fmt(v,2)+'" depth'; }
+
+/* ---------- pump configuration UI ---------- */
+function renderPumps(){
+  $("pumpCountPill").textContent = pumps.length+" pump"+(pumps.length!==1?"s":"");
+  const list=$("pumpList");
+  list.innerHTML = pumps.map((pu,i)=>`
+    <div class="pumprow" data-i="${i}">
+      <input class="nm" type="text" value="${escapeHtml(pu.name)}" data-f="name" placeholder="Pump name">
+      <input class="cap" type="number" step="any" inputmode="decimal" value="${pu.cap}" data-f="cap">
+      <span class="unit">GPH max</span>
+      <button class="danger tiny" data-del="${i}">✕</button>
+    </div>`).join("");
+  list.querySelectorAll("input").forEach(inp=>{
+    inp.addEventListener("input",e=>{
+      const row=e.target.closest(".pumprow"); const i=+row.dataset.i; const f=e.target.dataset.f;
+      pumps[i][f] = f==="cap" ? (parseFloat(e.target.value)||0) : e.target.value;
+      saveAll(); renderSelect();
+      // refresh capacity fields in the modes (auto ones)
+      ["s_size","p_size","t_size"].forEach(id=>$(id).dataset.auto="1");
+      applyPivotDefaults();
+    });
+  });
+  list.querySelectorAll("button[data-del]").forEach(b=>{
+    b.onclick=()=>{
+      const i=+b.dataset.del;
+      if(pumps.length<=1){ alert("Keep at least one pump."); return; }
+      const users=pivots.filter(p=>p.pump===i).map(p=>p.name);
+      if(users.length){ alert("Can't delete — in use by: "+users.join(", ")+".\nAssign those pivots a different pump first."); return; }
+      if(!confirm("Delete pump \""+pumps[i].name+"\"?")) return;
+      pumps.splice(i,1);
+      pivots.forEach(p=>{ if(p.pump>i) p.pump--; });
+      saveAll(); renderPumps(); renderSelect(); rebuildPumpSelect(); applyPivotDefaults();
+    };
+  });
+}
+$("addPumpBtn").onclick=()=>{ pumps.push({name:"New pump",cap:30}); saveAll(); renderPumps(); rebuildPumpSelect(); };
+$("pumpHead").onclick=()=> $("pumpCard").classList.toggle("collapsed");
+
+function rebuildPumpSelect(){
+  $("e_pump").innerHTML = pumps.map((pu,i)=>`<option value="${i}">${escapeHtml(pu.name)} (${fmt(pu.cap,1)} GPH)</option>`).join("");
+}
+
+/* ---------- pivot select UI ---------- */
+function renderSelect(){
+  const sel=$("pivotSel");
+  sel.innerHTML = pivots.map((p,i)=>`<option value="${i}">${escapeHtml(p.name)}</option>`).join("");
+  sel.value=selIdx;
+  const p=pivots[selIdx];
+  $("pivotPill").textContent = `${p.deg}° · ${pumpName(p)} ${fmt(pumpCap(p),0)} · ${isTimer(p)?"timer %":"depth"}`;
+}
+function relabel(){
+  const p=pivots[selIdx];
+  $("p_speedlabel").innerHTML = speedFieldLabel(p);
+  $("t_speedlabel").innerHTML = "Current "+(isTimer(p)?"pivot timer (%)":"target depth (inches)");
+}
+function applyPivotDefaults(){
+  const p=pivots[selIdx], cap=pumpCap(p);
+  setIfAuto("s_tank",p.tank); $("s_deg").value=p.deg; setIfAuto("s_size",cap);
+  setIfAuto("p_tank",p.tank); $("p_deg").value=p.deg; setIfAuto("p_size",cap); setIfAuto("p_speed",p.defSpeed);
+  setIfAuto("t_total",p.deg); setIfAuto("t_size",cap); setIfAuto("t_speed",p.defSpeed);
+  relabel(); computeAll();
+}
+function setIfAuto(id,val){ const el=$(id); if(el.value===""||el.dataset.auto==="1"){ el.value=val; el.dataset.auto="1"; } }
+["s_tank","p_tank","p_speed","s_size","p_size","t_total","t_size","t_speed"].forEach(id=>$(id).addEventListener("input",()=>{$(id).dataset.auto="0";}));
+function resetAuto(){ ["s_tank","p_tank","p_speed","s_size","p_size","t_total","t_size","t_speed","s_deg","p_deg"].forEach(id=>$(id).dataset.auto="1"); }
+
+/* ---------- pivot editor ---------- */
+let editingNew=false;
+function refreshCalLabel(){ $("e_callabel").innerHTML = $("e_mode").value==="timer"
+  ? 'Hours per full pass @ 100% <span class="hint">(calibration)</span>'
+  : 'Hours per inch @ 360° <span class="hint">(calibration)</span>'; }
+$("e_mode").onchange=refreshCalLabel;
+
+function openEditor(isNew){
+  editingNew=isNew;
+  const p=isNew?{name:"",mode:"timer",cal:"",deg:360,pump:0,tank:"",gpm:"",acres:"",defSpeed:""}:pivots[selIdx];
+  rebuildPumpSelect();
+  $("e_name").value=p.name; $("e_mode").value=p.mode||"timer"; refreshCalLabel();
+  $("e_cal").value=p.cal; $("e_deg").value=p.deg; $("e_pump").value=p.pump||0;
+  $("e_tank").value=p.tank; $("e_gpm").value=p.gpm||""; $("e_acres").value=p.acres||"";
+  $("deleteBtn").style.display=isNew?"none":"block";
+  $("editor").hidden=false; $("editToggle").textContent="Close";
+}
+function closeEditor(){ $("editor").hidden=true; $("editToggle").textContent="Edit"; }
+$("editToggle").onclick=()=>{ $("editor").hidden?openEditor(false):closeEditor(); };
+$("addBtn").onclick=()=>openEditor(true);
+$("cancelBtn").onclick=closeEditor;
+$("saveBtn").onclick=()=>{
+  const mode=$("e_mode").value;
+  const p={
+    name:$("e_name").value.trim()||"Unnamed", mode,
+    cal:parseFloat($("e_cal").value)||0,
+    deg:parseFloat($("e_deg").value)||360,
+    pump:parseInt($("e_pump").value,10)||0,
+    tank:parseFloat($("e_tank").value)||0,
+    gpm:parseFloat($("e_gpm").value)||0,
+    acres:parseFloat($("e_acres").value)||0,
+    defSpeed:mode==="timer"?15:0.30,
+  };
+  if(editingNew){ pivots.push(p); selIdx=pivots.length-1; }
+  else { p.defSpeed=pivots[selIdx].defSpeed||p.defSpeed; pivots[selIdx]=p; }
+  saveAll(); closeEditor(); renderSelect(); resetAuto(); applyPivotDefaults();
+};
+$("deleteBtn").onclick=()=>{
+  if(pivots.length<=1){ alert("Keep at least one pivot."); return; }
+  if(!confirm("Delete \""+pivots[selIdx].name+"\"?")) return;
+  pivots.splice(selIdx,1); if(selIdx>=pivots.length) selIdx=pivots.length-1;
+  saveAll(); closeEditor(); renderSelect(); resetAuto(); applyPivotDefaults();
+};
+$("pivotSel").onchange=e=>{
+  selIdx=parseInt(e.target.value,10); saveAll();
+  renderSelect(); resetAuto(); applyPivotDefaults();
+  if(!$("editor").hidden) openEditor(false);
+};
+
+/* ---------- tabs ---------- */
+document.querySelectorAll(".tabs button").forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll(".tabs button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    const m=btn.dataset.mode;
+    document.querySelectorAll(".card.mode").forEach(c=>c.hidden=c.dataset.mode!==m);
+  };
+});
+
+/* ---------- calculations ---------- */
+function computeAll(){ computeSpeed(); computePump(); computeTrack(); }
+function gridRow(k,v){ return `<div><div class="k">${k}</div><div class="v">${v}</div></div>`; }
+
+function computeSpeed(){
+  const p=pivots[selIdx];
+  const tank=num($("s_tank")), deg=num($("s_deg")), setting=num($("s_setting")), size=num($("s_size"));
+  const out=$("speedResult");
+  if(![tank,deg,setting,size].every(isFinite)||tank<=0||deg<=0||setting<=0||size<=0||!p.cal){ out.innerHTML=""; return; }
+  const rate=size*setting/100, hrs=tank/rate, speed=speedForHrs(p,hrs,deg), mpd=minPerDeg(hrs,deg);
+  const prec=precipInches(p.gpm,p.acres,hrs);
+  let warn="";
+  if(isTimer(p)&&speed>100) warn=`<div class="verdict bad" style="margin-top:12px">Needs ${fmt(speed,1)}% — over 100%. The pivot can't go fast enough to empty the tank this quickly. Lower the pump setting or use a smaller pump.</div>`;
+  warn += plausibility({rate,hrs,depth:isTimer(p)?NaN:speed,timer:isTimer(p)?speed:NaN});
+  out.innerHTML=`
+    <div class="result">
+      <div class="biglabel">Run the pivot at</div>
+      <div class="big">${isTimer(p)?fmt(speed,1)+'<span style="font-size:18px">% timer</span>':fmt(speed,2)+'<span style="font-size:18px">" depth</span>'}</div>
+      <div class="grid2">
+        ${gridRow("Injection rate",fmt(rate,1)+" GPH")}
+        ${gridRow("Time for this pass",hoursToDHM(hrs)+" ("+fmt(hrs,1)+" hr)")}
+        ${gridRow("Minutes per degree",fmt(mpd,2))}
+        ${gridRow("Finishes about",finishStamp(hrs,startMsOf("s_start")))}
+        ${isFinite(prec)?gridRow("Water applied",fmt(prec,2)+'" /acre'):""}
+      </div>
+    </div>${warn}`;
+}
+
+function computePump(){
+  const p=pivots[selIdx];
+  const tank=num($("p_tank")), deg=num($("p_deg")), speed=num($("p_speed")), size=num($("p_size"));
+  const out=$("pumpResult");
+  if(![tank,deg,speed,size].every(isFinite)||tank<=0||deg<=0||speed<=0||size<=0||!p.cal){ out.innerHTML=""; return; }
+  const hrs=hrsForSpeed(p,speed,deg), rate=tank/hrs, setting=rate/size*100;
+  const prec=precipInches(p.gpm,p.acres,hrs);
+  let warn="";
+  if(setting>100) warn=`<div class="verdict bad" style="margin-top:12px">Needs ${fmt(setting,0)}% — over the pump's 100% capacity. It can't inject ${fmt(rate,1)} GPH. Run the pivot slower, use a bigger pump, or start with less in the tank.</div>`;
+  warn += plausibility({rate,hrs,depth:isTimer(p)?NaN:speed,timer:isTimer(p)?speed:NaN,pumpPct:setting});
+  out.innerHTML=`
+    <div class="result">
+      <div class="biglabel">Set the pump to</div>
+      <div class="big">${fmt(setting,1)}<span style="font-size:18px">%</span></div>
+      <div class="grid2">
+        ${gridRow("Injection rate",fmt(rate,1)+" GPH")}
+        ${gridRow("Pivot speed",speedStr(p,speed))}
+        ${gridRow("Time for this pass",hoursToDHM(hrs)+" ("+fmt(hrs,1)+" hr)")}
+        ${gridRow("Finishes about",finishStamp(hrs,startMsOf("p_start")))}
+        ${isFinite(prec)?gridRow("Water applied",fmt(prec,2)+'" /acre'):""}
+      </div>
+    </div>${warn}`;
+}
+
+function computeTrack(){
+  const p=pivots[selIdx];
+  const orig=num($("t_orig")), cur=num($("t_tank")), total=num($("t_total")), remain=num($("t_deg"));
+  const out=$("trackResult");
+  computeAccuracy(); // optional breakdown runs independently
+  if(![orig,cur,total,remain].every(isFinite)||orig<=0||cur<0||total<=0||remain<0||remain>=total||cur>orig){ out.innerHTML=""; return; }
+
+  const curPivot=num($("t_speed")), curPump=num($("t_setting"));
+  const used=orig-cur, covered=total-remain;
+  if(covered<=0){ out.innerHTML=`<div class="verdict warn" style="margin-top:12px">Enter some progress (degrees left below the total) and a drop in gallons, and I'll measure your actual pace.</div>`; return; }
+
+  const usedFrac=used/orig, doneFrac=covered/total;          // should match if on track
+  const galPerDeg=used/covered;                               // your real pace
+  const projUse=galPerDeg*remain;                             // gallons you'll use over the rest at this pace
+  const end=cur-projUse;                                      // + leftover, - short
+  const reachDeg=galPerDeg>0 ? cur/galPerDeg : Infinity;      // more degrees the tank will cover
+  const needPace=cur/remain;                                  // target gal/deg from here
+  const factor=needPace/galPerDeg;                            // <1 = ease off, >1 = more
+
+  // absolute new settings: scale the CURRENT dial by the factor (calibration error cancels).
+  // pump rate ∝ setting% ; timer speed ∝ % (gal/° ∝ 1/%); depth: gal/° ∝ inches
+  const newPump = isFinite(curPump)&&curPump>0 ? curPump*factor : NaN;
+  const newPivot = isFinite(curPivot)&&curPivot>0 ? (isTimer(p)? curPivot/factor : curPivot*factor) : NaN;
+  const pivStr = v => isTimer(p)? fmt(v,1)+"% timer" : fmt(v,2)+'" depth';
+
+  function options(){
+    const opts=[];
+    if(isFinite(newPivot)){
+      if(isTimer(p)&&newPivot>100) opts.push(`speed the pivot past 100% (not possible — use the pump instead)`);
+      else opts.push(`set the pivot to <b>${pivStr(newPivot)}</b>`);
+    }
+    if(isFinite(newPump)){
+      if(newPump>100) opts.push(`set the pump to <b>${fmt(newPump,0)}%</b> (over its 100% max — not possible)`);
+      else opts.push(`set the pump to <b>${fmt(newPump,1)}%</b>`);
+    }
+    if(!opts.length) opts.push(`enter your current pivot &amp; pump settings above and I'll give the new numbers`);
+    return `<div class="fix">To finish empty right at the end: ${opts.join(" &nbsp;—or—&nbsp; ")}.</div>`;
+  }
+
+  let cls,head,fix;
+  const tol=Math.max(orig*0.03,5);
+  if(Math.abs(end)<=tol){
+    cls="ok";
+    head=`✅ On track. You've used ${fmt(usedFrac*100,0)}% of the fertilizer and finished ${fmt(doneFrac*100,0)}% of the pass — right in step. At this pace you'll finish within ~${fmt(Math.abs(end),0)} gal of empty.`;
+    fix="";
+  } else if(end>0){
+    cls="warn";
+    head=`⚠️ Running light on fertilizer use — used ${fmt(usedFrac*100,0)}% of the tank but ${fmt(doneFrac*100,0)}% of the pass is done. At this pace you'll finish with about ${fmt(end,0)} gal left over.`;
+    fix=options();
+  } else {
+    cls="bad";
+    head=`🛑 Burning fertilizer too fast — used ${fmt(usedFrac*100,0)}% of the tank but only ${fmt(doneFrac*100,0)}% of the pass is done. At this pace you'll run dry about ${fmt(Math.max(remain-reachDeg,0),0)}° short of the finish.`;
+    fix=options();
+  }
+  out.innerHTML=`
+    <div class="verdict ${cls}">${head}${fix}</div>
+    <div class="result" style="margin-top:12px">
+      <div class="grid2">
+        ${gridRow("Fertilizer used",fmt(used,0)+" gal ("+fmt(usedFrac*100,0)+"%)")}
+        ${gridRow("Pass completed",fmt(covered,0)+"° of "+fmt(total,0)+"° ("+fmt(doneFrac*100,0)+"%)")}
+        ${gridRow("Actual pace",fmt(galPerDeg,2)+" gal/°")}
+        ${gridRow("Need from here",fmt(needPace,2)+" gal/° to finish empty")}
+        ${gridRow("Left in tank",fmt(cur,0)+" gal")}
+        ${gridRow("At this pace, ends",end>=0?"with ~"+fmt(end,0)+" gal left":fmt(Math.max(remain-reachDeg,0),0)+"° short")}
+      </div>
+    </div>`;
+}
+
+// optional: compare actual pump rate & pivot speed to the dialed settings
+function computeAccuracy(){
+  const p=pivots[selIdx];
+  const out=$("accResult");
+  const orig=num($("t_orig")), cur=num($("t_tank")), total=num($("t_total")), remain=num($("t_deg"));
+  const hours=num($("t_hours")), setting=num($("t_setting")), size=num($("t_size")), speed=num($("t_speed"));
+  if(![orig,cur,total,remain,hours].every(isFinite)||hours<=0||orig<cur||total<=remain){ out.innerHTML=""; return; }
+  const used=orig-cur, covered=total-remain;
+  const rows=[];
+
+  // pump accuracy
+  const actGPH=used/hours;
+  rows.push(gridRow("Actual pump rate",fmt(actGPH,1)+" GPH"));
+  if(isFinite(setting)&&isFinite(size)&&setting>0&&size>0){
+    const expGPH=size*setting/100;
+    const err=(actGPH/expGPH-1)*100;
+    rows.push(gridRow("Dial says",fmt(expGPH,1)+" GPH @ "+fmt(setting,0)+"%"));
+    rows.push(gridRow("Pump is",(Math.abs(err)<2?"≈ on the dial":fmt(Math.abs(err),0)+"% "+(err>0?"HIGH (faster than set)":"LOW (slower than set)"))));
+    // effective capacity implied by the real output
+    rows.push(gridRow("Implied max cap",fmt(actGPH/(setting/100),1)+" GPH @ 100%"));
+  }
+  // pivot speed accuracy
+  if(covered>0){
+    const actDegHr=covered/hours;
+    rows.push(gridRow("Actual pivot pace",fmt(actDegHr,1)+" °/hr"));
+    if(isFinite(speed)&&speed>0&&p.cal){
+      const expHrs=hrsForSpeed(p,speed,total), expDegHr=total/expHrs;
+      const serr=(actDegHr/expDegHr-1)*100;
+      rows.push(gridRow("Dial implies",fmt(expDegHr,1)+" °/hr"));
+      rows.push(gridRow("Pivot is",(Math.abs(serr)<2?"≈ on the dial":fmt(Math.abs(serr),0)+"% "+(serr>0?"FASTER than set":"SLOWER than set"))));
+    }
+  }
+  out.innerHTML=`<div class="result" style="margin-top:12px"><div class="grid2">${rows.join("")}</div></div>`;
+}
+
+/* ---------- backup / restore ---------- */
+$("backupHead").onclick=()=>{
+  const c=$("backupCard"); c.classList.toggle("collapsed");
+  if(!c.classList.contains("collapsed") && !$("backupText").value.trim()) buildBackupText();
+};
+function buildBackupText(){
+  $("backupText").value = JSON.stringify({app:"pivotpump",v:1,pumps,pivots,selIdx});
+}
+$("copyBackup").onclick=()=>{
+  buildBackupText();
+  const ta=$("backupText"); ta.focus(); ta.select();
+  const done=()=>{ $("backupMsg").textContent="✅ Copied. Paste it into a note or email it to yourself."; };
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(ta.value).then(done,()=>{
+    try{ document.execCommand("copy"); done(); }catch(e){ $("backupMsg").textContent="Select the text above and copy it manually."; }
+  }); } else { try{ document.execCommand("copy"); done(); }catch(e){ $("backupMsg").textContent="Select the text above and copy it manually."; } }
+};
+$("restoreBackup").onclick=()=>{
+  let data;
+  try{ data=JSON.parse($("backupText").value.trim()); }
+  catch(e){ $("backupMsg").textContent="⚠️ That text isn't a valid backup — paste the full copied text."; return; }
+  if(!data||!Array.isArray(data.pumps)||!Array.isArray(data.pivots)||!data.pumps.length||!data.pivots.length){
+    $("backupMsg").textContent="⚠️ Backup is missing pumps or pivots."; return;
+  }
+  if(!confirm("Restore "+data.pivots.length+" pivots and "+data.pumps.length+" pumps? This replaces what's here now.")) return;
+  pumps=data.pumps; pivots=data.pivots;
+  selIdx=Number.isInteger(data.selIdx)&&data.selIdx<pivots.length?data.selIdx:0;
+  saveAll();
+  renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults();
+  $("backupMsg").textContent="✅ Restored "+pivots.length+" pivots and "+pumps.length+" pumps.";
+};
+
+/* recompute on any input */
+document.querySelectorAll("input").forEach(el=>el.addEventListener("input",computeAll));
+
+/* ---------- boot ---------- */
+renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults();
+</script>
+</body>
+</html>
