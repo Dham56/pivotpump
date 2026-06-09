@@ -69,6 +69,26 @@
   .pumprow .unit{font-size:12px;color:var(--muted);white-space:nowrap}
   .pumprow input{padding:9px 10px}
   .collapsed > .body{display:none}
+  /* pass logging */
+  .logrow{display:flex;gap:8px;align-items:flex-end}
+  .logrow>div{flex:1}
+  .readlist{margin-top:10px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .readlist .r{display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:13px;border-top:1px solid var(--line)}
+  .readlist .r:first-child{border-top:none}
+  .readlist .r.head{background:#f0f4f1;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  .readlist .r .c{flex:1}
+  .readlist .r .x{flex:0 0 auto;color:var(--red);cursor:pointer;font-weight:700;padding:2px 6px}
+  .chart{display:flex;align-items:flex-end;height:84px;gap:1px;margin-top:10px;background:#f0f4f1;border-radius:8px;padding:6px;position:relative}
+  .chart .bar{min-width:2px;border-radius:2px 2px 0 0}
+  .chart .tline{position:absolute;left:6px;right:6px;border-top:2px dashed #88a;opacity:.7}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  .passitem{border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px}
+  .passitem .top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+  .passitem .top b{font-size:14px}
+  .passitem .meta{font-size:12px;color:var(--muted)}
+  .tot{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-top:1px solid var(--line)}
+  .tot b{color:var(--green-dk)}
   .secthead{display:flex;align-items:center;gap:8px;cursor:pointer}
   .secthead .chev{margin-left:auto;color:var(--muted);transition:transform .15s}
   .collapsed .chev{transform:rotate(-90deg)}
@@ -185,6 +205,7 @@
     <button data-mode="speed" class="active">Find pivot speed</button>
     <button data-mode="pump">Find pump setting</button>
     <button data-mode="track">On-track check</button>
+    <button data-mode="log">Log &amp; history</button>
   </div>
 
   <!-- MODE: FIND PIVOT SPEED -->
@@ -306,6 +327,29 @@
     </details>
   </div>
 
+  <!-- MODE: LOG & HISTORY -->
+  <div class="card mode" data-mode="log" hidden>
+    <h2>Log a pass &amp; track application</h2>
+    <div id="logBody"></div>
+
+    <div class="card collapsed" id="histCard" style="margin-top:14px;box-shadow:none">
+      <div class="secthead" id="histHead">
+        <h2 style="margin:0">📒 History &amp; totals</h2>
+        <span class="pill" id="histPill"></span>
+        <span class="chev">▾</span>
+      </div>
+      <div class="body" id="histBody"></div>
+    </div>
+
+    <div class="card collapsed" id="calCard" style="margin-top:0;box-shadow:none">
+      <div class="secthead" id="calHead">
+        <h2 style="margin:0">🎯 Calibration from logged passes</h2>
+        <span class="chev">▾</span>
+      </div>
+      <div class="body" id="calBody"></div>
+    </div>
+  </div>
+
   <p class="note">PivotPump v1 · pivots &amp; pumps are saved in this browser. Math mirrors the HJV pivot spreadsheet: injection rate = pump max capacity × setting% ÷ 100, and "finished properly" means the tank empties as the pass completes. Timer pivots: pass time = hrs@100% ÷ (timer%/100). Depth pivots: pass time = hrs/inch × target inches.</p>
 </div>
 
@@ -331,10 +375,10 @@ const SEED_PIVOTS = [
   {name:"East Young", mode:"timer", cal:9.72,   deg:360, pump:3, tank:3000, gpm:425, acres:122,   defSpeed:11},
   {name:"West Young", mode:"timer", cal:14.88,  deg:360, pump:4, tank:3000, gpm:500, acres:121.4, defSpeed:18},
 ];
-const K_PUMPS="pivotpump.pumps.v1", K_PIVOTS="pivotpump.pivots.v3", K_SEL="pivotpump.selected.v3", K_OLD="pivotpump.pivots.v2";
+const K_PUMPS="pivotpump.pumps.v1", K_PIVOTS="pivotpump.pivots.v3", K_SEL="pivotpump.selected.v3", K_OLD="pivotpump.pivots.v2", K_PASSES="pivotpump.passes.v1";
 
 /* ---------- load with migration from the old per-pivot-size format ---------- */
-let pumps, pivots, selIdx;
+let pumps, pivots, selIdx, passes;
 (function load(){
   let sp=null, sv=null;
   try{ sp=JSON.parse(localStorage.getItem(K_PUMPS)); }catch(e){}
@@ -355,10 +399,12 @@ let pumps, pivots, selIdx;
   }
   selIdx = parseInt(localStorage.getItem(K_SEL)||"0",10)||0;
   if(selIdx>=pivots.length) selIdx=0;
+  try{ const pp=JSON.parse(localStorage.getItem(K_PASSES)); passes=Array.isArray(pp)?pp:[]; }catch(e){ passes=[]; }
 })();
 function saveAll(){ try{
   localStorage.setItem(K_PUMPS,JSON.stringify(pumps));
   localStorage.setItem(K_PIVOTS,JSON.stringify(pivots));
+  localStorage.setItem(K_PASSES,JSON.stringify(passes));
   localStorage.setItem(K_SEL,String(selIdx));
 }catch(e){} }
 
@@ -522,7 +568,7 @@ $("deleteBtn").onclick=()=>{
 };
 $("pivotSel").onchange=e=>{
   selIdx=parseInt(e.target.value,10); saveAll();
-  renderSelect(); resetAuto(); applyPivotDefaults();
+  renderSelect(); resetAuto(); applyPivotDefaults(); renderLog();
   if(!$("editor").hidden) openEditor(false);
 };
 
@@ -533,6 +579,7 @@ document.querySelectorAll(".tabs button").forEach(btn=>{
     btn.classList.add("active");
     const m=btn.dataset.mode;
     document.querySelectorAll(".card.mode").forEach(c=>c.hidden=c.dataset.mode!==m);
+    if(m==="log") renderLog();
   };
 });
 
@@ -691,13 +738,238 @@ function computeAccuracy(){
   out.innerHTML=`<div class="result" style="margin-top:12px"><div class="grid2">${rows.join("")}</div></div>`;
 }
 
+/* ===================== PASS LOGGING / HISTORY / CALIBRATION ===================== */
+function uid(){ return "p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function activePass(){ const nm=pivots[selIdx].name; return passes.find(p=>p.status==="active"&&p.pivot===nm); }
+
+// reconstruct application across the rotation from the logged readings
+function summarize(pass){
+  const rs=[...pass.readings].sort((a,b)=>a.pos-b.pos);
+  const total=pass.totalDeg||360;
+  const segs=[];
+  for(let i=0;i<rs.length-1;i++){
+    const a=rs[i],b=rs[i+1], dspan=b.pos-a.pos, gused=a.gal-b.gal;
+    const hrs=(a.t&&b.t)?(b.t-a.t)/3600000:NaN;
+    segs.push({p0:a.pos,p1:b.pos,deg:dspan,gal:gused,rate:dspan>0?gused/dspan:NaN,hrs});
+  }
+  const first=rs[0], last=rs[rs.length-1];
+  const applied = first&&last ? first.gal-last.gal : NaN;
+  const lastPos = last?last.pos:0;
+  let dryPos=null; for(const r of rs){ if(r.gal<=0){ dryPos=r.pos; break; } }
+  const ranDry = dryPos!=null || pass.ranDry;
+  if(ranDry && dryPos==null) dryPos=lastPos;
+  const dosedEnd = ranDry?dryPos:lastPos;
+  const wedge = ranDry ? Math.max(total-dryPos,0) : 0;
+  const dosedPct = total>0 ? Math.min(dosedEnd,total)/total*100 : 0;
+  // uniformity over the whole intended arc; a dry wedge counts as rate 0
+  const segW=segs.filter(s=>s.deg>0&&isFinite(s.rate));
+  const weights=segW.map(s=>s.deg), vals=segW.map(s=>s.rate);
+  if(wedge>0){ weights.push(wedge); vals.push(0); }
+  const sumW=weights.reduce((a,b)=>a+b,0);
+  const mean=sumW>0?weights.reduce((a,w,i)=>a+w*vals[i],0)/sumW:NaN;
+  let cu=NaN;
+  if(sumW>0&&mean>0){ const mad=weights.reduce((a,w,i)=>a+w*Math.abs(vals[i]-mean),0)/sumW; cu=100*(1-mad/mean); }
+  const target = total>0?pass.startGal/total:NaN;
+  const ratesOnly=segW.map(s=>s.rate);
+  const minR=ratesOnly.length?Math.min(...ratesOnly):NaN, maxR=ratesOnly.length?Math.max(...ratesOnly):NaN;
+  const totHrs=(first&&last&&first.t&&last.t)?(last.t-first.t)/3600000:NaN;
+  const degCovered=lastPos-(first?first.pos:0);
+  return {segs,applied,lastPos,ranDry,dryPos,wedge,dosedPct,mean,cu,target,minR,maxR,totHrs,degCovered,total};
+}
+
+function chartHtml(s){
+  if(!s.segs.length||!s.total) return "";
+  const maxScale=(Math.max(s.maxR||0, isFinite(s.target)?s.target:0)*1.12)||1, inner=72;
+  let bars="";
+  for(const seg of s.segs){
+    const w=Math.max(seg.deg/s.total*100,1.5), h=isFinite(seg.rate)?Math.max(seg.rate/maxScale*inner,1):1;
+    bars+=`<div class="bar" style="flex:0 0 ${w}%;height:${h}px;background:var(--green)" title="${fmt(seg.p0,0)}–${fmt(seg.p1,0)}°: ${fmt(seg.rate,2)} gal/°"></div>`;
+  }
+  if(s.wedge>0){ const w=Math.max(s.wedge/s.total*100,1.5);
+    bars+=`<div class="bar" style="flex:0 0 ${w}%;height:${inner}px;background:rgba(185,28,28,.16);border:1px dashed var(--red);border-bottom:none" title="${fmt(s.wedge,0)}° dry — water only"></div>`; }
+  const tline=isFinite(s.target)&&s.target>0?`<div class="tline" style="bottom:${(6+s.target/maxScale*inner).toFixed(1)}px"></div>`:"";
+  return `<div class="chart">${tline}${bars}</div>
+    <div class="legend"><span><i style="background:var(--green)"></i>fertilizer rate (gal/°)</span>${s.wedge>0?'<span><i style="background:rgba(185,28,28,.3);border:1px dashed var(--red)"></i>dry / water only</span>':""}<span><i style="background:#88a"></i>even-spread target</span></div>`;
+}
+
+function summaryHtml(pass,s){
+  const galAc=isFinite(pass.acres)&&pass.acres>0?s.applied/pass.acres:NaN;
+  const rows=[];
+  rows.push(gridRow("Applied so far",fmt(s.applied,0)+" gal"));
+  if(isFinite(galAc)) rows.push(gridRow("Per acre",fmt(galAc,1)+" gal/ac"));
+  rows.push(gridRow("Circle dosed",fmt(s.dosedPct,0)+"%"));
+  if(s.wedge>0) rows.push(gridRow("Dry wedge",fmt(s.wedge,0)+"° water only"));
+  if(isFinite(s.cu)) rows.push(gridRow("Evenness (CU)",fmt(s.cu,0)+"%"));
+  if(isFinite(s.minR)&&isFinite(s.maxR)) rows.push(gridRow("Rate range",fmt(s.minR,2)+"–"+fmt(s.maxR,2)+" gal/°"));
+  if(isFinite(s.totHrs)) rows.push(gridRow("Run time",hoursToDHM(s.totHrs)));
+  let verdict="";
+  if(isFinite(s.cu)){
+    if(s.wedge>0) verdict=`<div class="verdict bad">🛑 Ran dry — last ${fmt(s.wedge,0)}° (${fmt(100-s.dosedPct,0)}% of the circle) got water only. Evenness ${fmt(s.cu,0)}%.</div>`;
+    else if(s.cu>=90) verdict=`<div class="verdict ok">✅ Even application — ${fmt(s.cu,0)}% uniformity across the pass.</div>`;
+    else verdict=`<div class="verdict warn">⚠️ Uneven — ${fmt(s.cu,0)}% uniformity. Rate ran ${fmt(s.minR,2)}–${fmt(s.maxR,2)} gal/° across the circle (usually mid-pass rate changes).</div>`;
+  }
+  return verdict+chartHtml(s)+`<div class="result" style="margin-top:12px"><div class="grid2">${rows.join("")}</div></div>`;
+}
+
+function startFormHtml(p){
+  return `<p class="muted">Start a pass for <b>${escapeHtml(p.name)}</b>, then log pivot position + tank gallons as it runs. Each entry is timestamped.</p>
+  <div class="row">
+    <div><label>Starting fertilizer (gal)</label><input id="lg_start" type="number" step="any" inputmode="decimal" value="${p.tank||""}"></div>
+    <div><label>Degrees in the pass</label><input id="lg_total" type="number" step="any" inputmode="decimal" value="${p.deg||360}"></div>
+  </div>
+  <div class="row">
+    <div><label>${isTimer(p)?"Dialed pivot timer (%)":"Dialed target depth (in)"} <span class="hint">(optional)</span></label><input id="lg_speed" type="number" step="any" inputmode="decimal" value="${p.defSpeed||""}"></div>
+    <div><label>Dialed pump setting (%) <span class="hint">(optional)</span></label><input id="lg_pump" type="number" step="any" inputmode="decimal"></div>
+  </div>
+  <div class="row">
+    <div><label>Product / note <span class="hint">(optional)</span></label><input id="lg_product" type="text" placeholder="e.g. 32-0-0"></div>
+    <div><label>Start time <span class="hint">(blank = now)</span></label><input id="lg_date" type="datetime-local"></div>
+  </div>
+  <button id="startPassBtn" style="margin-top:12px">Start pass</button>`;
+}
+function startPass(){
+  const p=pivots[selIdx];
+  const startGal=parseFloat($("lg_start").value);
+  if(!isFinite(startGal)||startGal<=0){ alert("Enter the starting gallons."); return; }
+  const totalDeg=parseFloat($("lg_total").value)||p.deg||360;
+  const dt=$("lg_date").value, t0=dt?new Date(dt).getTime():Date.now();
+  passes.push({ id:uid(), pivot:p.name, mode:p.mode, cal:p.cal, totalDeg, startGal,
+    acres:p.acres||0, pumpCap:pumpCap(p),
+    dialPump:parseFloat($("lg_pump").value), dialSpeed:parseFloat($("lg_speed").value),
+    product:$("lg_product").value.trim(), date:t0, status:"active", ranDry:false,
+    readings:[{pos:0,gal:startGal,t:t0}] });
+  saveAll(); renderLog();
+}
+
+function activePassHtml(ap){
+  const s=summarize(ap), last=ap.readings[ap.readings.length-1];
+  const rows=ap.readings.map((r,i)=>`<div class="r"><span class="c">${fmt(r.pos,0)}°</span><span class="c">${fmt(r.gal,0)} gal</span><span class="c">${r.t?new Date(r.t).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):""}</span><span class="x" data-delread="${i}">✕</span></div>`).join("");
+  return `<div class="passitem" style="margin-bottom:12px"><div class="top"><b>${escapeHtml(ap.pivot)}</b> <span class="meta">started ${new Date(ap.date).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} · ${fmt(ap.startGal,0)} gal · ${fmt(ap.totalDeg,0)}°${ap.product?" · "+escapeHtml(ap.product):""}</span></div></div>
+  <div class="logrow">
+    <div><label>Pivot position (° traveled)</label><input id="lg_pos" type="number" step="any" inputmode="decimal" placeholder="now ${fmt(s.lastPos,0)}°"></div>
+    <div><label>Gallons in tank</label><input id="lg_galnow" type="number" step="any" inputmode="decimal" placeholder="${fmt(last.gal,0)}"></div>
+    <button id="logReadBtn" class="sm">Log</button>
+  </div>
+  <div class="readlist"><div class="r head"><span class="c">Position</span><span class="c">Tank</span><span class="c">Time</span><span class="x"></span></div>${rows}</div>
+  <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+    <button class="ghost sm" id="dryBtn">Tank ran dry here</button>
+    <button class="sm" id="finishBtn">Finish pass</button>
+    <button class="danger sm" id="delPassBtn" style="margin-left:auto">Discard</button>
+  </div>
+  ${ap.readings.length>=2?summaryHtml(ap,s):'<p class="muted" style="margin-top:12px">Log at least one more reading to see the application profile.</p>'}`;
+}
+function wireActivePass(ap){
+  $("logReadBtn").onclick=()=>{
+    const pos=parseFloat($("lg_pos").value), gal=parseFloat($("lg_galnow").value);
+    if(!isFinite(pos)||!isFinite(gal)){ alert("Enter both pivot position and gallons."); return; }
+    ap.readings.push({pos,gal,t:Date.now()}); ap.readings.sort((a,b)=>a.t-b.t); saveAll(); renderLog();
+  };
+  $("dryBtn").onclick=()=>{
+    const pos=parseFloat($("lg_pos").value), at=isFinite(pos)?pos:summarize(ap).lastPos;
+    ap.readings.push({pos:at,gal:0,t:Date.now()}); ap.ranDry=true; saveAll(); renderLog();
+  };
+  $("finishBtn").onclick=()=>{
+    if(ap.readings.length<2){ alert("Log at least two readings before finishing."); return; }
+    ap.status="done"; ap.endGal=ap.readings[ap.readings.length-1].gal; saveAll(); renderLog();
+    document.querySelector('.card.mode[data-mode="log"]').scrollIntoView({behavior:"smooth",block:"start"});
+  };
+  $("delPassBtn").onclick=()=>{ if(!confirm("Discard this in-progress pass?")) return; passes=passes.filter(x=>x.id!==ap.id); saveAll(); renderLog(); };
+  $("logBody").querySelectorAll(".x[data-delread]").forEach(x=>x.onclick=()=>{
+    const i=+x.dataset.delread;
+    if(ap.readings.length<=1){ alert("Keep at least the start reading, or Discard the pass."); return; }
+    ap.readings.splice(i,1); saveAll(); renderLog();
+  });
+}
+
+function renderLog(){
+  if(!$("logBody")) return;
+  const p=pivots[selIdx], ap=activePass();
+  $("logBody").innerHTML = ap?activePassHtml(ap):startFormHtml(p);
+  if(ap) wireActivePass(ap); else $("startPassBtn").onclick=startPass;
+  renderHistory(); renderCalibration();
+}
+
+function renderHistory(){
+  const done=passes.filter(p=>p.status==="done").sort((a,b)=>(b.date||0)-(a.date||0));
+  $("histPill").textContent=done.length+" pass"+(done.length!==1?"es":"");
+  const body=$("histBody");
+  if(!done.length){ body.innerHTML=`<p class="muted" style="margin-top:10px">No finished passes yet. Start and finish a pass above and it shows here with running totals.</p>`; return; }
+  const byPivot={}; let grand=0;
+  done.forEach(p=>{ const s=summarize(p), ap=isFinite(s.applied)?s.applied:0; grand+=ap; (byPivot[p.pivot]=byPivot[p.pivot]||{gal:0,n:0}); byPivot[p.pivot].gal+=ap; byPivot[p.pivot].n++; });
+  const items=done.map(p=>{ const s=summarize(p);
+    const d=p.date?new Date(p.date).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}):"";
+    const ev=s.wedge>0?`dry wedge ${fmt(s.wedge,0)}°`:(isFinite(s.cu)?`${fmt(s.cu,0)}% even`:"");
+    return `<div class="passitem">
+      <div class="top"><b>${escapeHtml(p.pivot)}</b> <span class="meta">${d}${p.product?" · "+escapeHtml(p.product):""}</span></div>
+      <div class="meta">${fmt(s.applied,0)} gal${p.acres?" · "+fmt(s.applied/p.acres,1)+" gal/ac":""} · ${fmt(s.dosedPct,0)}% dosed · ${ev}</div>
+      ${chartHtml(s)}
+      <div style="margin-top:8px"><button class="danger tiny" data-delpass="${p.id}">Delete</button></div></div>`;
+  }).join("");
+  const totals=`<div style="margin-top:6px">`+Object.entries(byPivot).map(([nm,v])=>`<div class="tot"><span>${escapeHtml(nm)} <span class="muted">(${v.n})</span></span><b>${fmt(v.gal,0)} gal</b></div>`).join("")+`<div class="tot"><span><b>All pivots</b></span><b>${fmt(grand,0)} gal</b></div></div>`;
+  body.innerHTML=items+totals+`<button class="ghost sm" id="copyHist" style="margin-top:10px">Copy history as CSV</button><div id="histMsg" class="muted" style="margin-top:6px"></div>`;
+  body.querySelectorAll("button[data-delpass]").forEach(b=>b.onclick=()=>{ if(!confirm("Delete this pass from history?")) return; passes=passes.filter(x=>x.id!==b.dataset.delpass); saveAll(); renderLog(); });
+  $("copyHist").onclick=()=>copyHistCsv(done);
+}
+
+const csvCell=s=>{ s=String(s); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+const rnd=n=>isFinite(n)?Math.round(n*100)/100:"";
+function copyHistCsv(done){
+  const head=["date","pivot","product","start_gal","total_deg","applied_gal","acres","gal_per_acre","dosed_pct","dry_wedge_deg","uniformity_cu","run_hours"];
+  const lines=[head.join(",")];
+  done.forEach(p=>{ const s=summarize(p);
+    lines.push([ p.date?new Date(p.date).toISOString().slice(0,10):"", csvCell(p.pivot), csvCell(p.product||""), rnd(p.startGal), rnd(p.totalDeg), rnd(s.applied), rnd(p.acres), rnd(p.acres?s.applied/p.acres:""), rnd(s.dosedPct), rnd(s.wedge), rnd(s.cu), rnd(s.totHrs) ].join(",")); });
+  const text=lines.join("\n"), ok=()=>{ $("histMsg").textContent="✅ Copied CSV — paste into a spreadsheet or note."; };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok,()=>fallbackCopy(text,ok)); else fallbackCopy(text,ok);
+}
+function fallbackCopy(text,cb){ const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");cb();}catch(e){ if($("histMsg"))$("histMsg").textContent="Copy failed."; } ta.remove(); }
+
+function renderCalibration(){
+  const p=pivots[selIdx], body=$("calBody");
+  const samples=passes.filter(x=>x.status==="done"&&x.pivot===p.name).map(x=>({x,s:summarize(x)}))
+    .filter(o=>isFinite(o.s.totHrs)&&o.s.totHrs>0&&isFinite(o.s.applied)&&o.s.applied>0);
+  if(!samples.length){ body.innerHTML=`<p class="muted" style="margin-top:10px">Log a full pass for <b>${escapeHtml(p.name)}</b> (with timestamps and the dialed pump/speed) and I'll compare actual vs dial and offer to update the calibration.</p>`; return; }
+  const pumpErrs=[], speedErrs=[];
+  samples.forEach(({x,s})=>{
+    const actGPH=s.applied/s.totHrs;
+    if(isFinite(x.dialPump)&&x.dialPump>0&&isFinite(x.pumpCap)&&x.pumpCap>0) pumpErrs.push(actGPH/(x.pumpCap*x.dialPump/100)-1);
+    const actDegHr=s.degCovered/s.totHrs;
+    if(isFinite(x.dialSpeed)&&x.dialSpeed>0&&isFinite(x.cal)&&x.cal>0){
+      const expHrs=x.mode==="timer"?x.cal*100/x.dialSpeed*(x.totalDeg/360):x.cal*x.dialSpeed*(x.totalDeg/360);
+      speedErrs.push(actDegHr/(x.totalDeg/expHrs)-1);
+    }
+  });
+  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:NaN;
+  const pErr=avg(pumpErrs), sErr=avg(speedErrs), cap=pumpCap(p);
+  let html=`<p class="muted" style="margin-top:10px">From ${samples.length} logged pass${samples.length!==1?"es":""} of <b>${escapeHtml(p.name)}</b>:</p>`;
+  if(isFinite(pErr)){ const newCap=cap*(1+pErr);
+    html+=`<div class="result"><div class="grid2">
+      ${gridRow("Pump vs dial",(pErr>=0?"+":"")+fmt(pErr*100,0)+"% "+(pErr>=0?"high":"low"))}
+      ${gridRow("Current max cap",fmt(cap,1)+" GPH")}
+      ${gridRow("Suggested max cap",fmt(newCap,1)+" GPH")}</div>
+      <button class="sm" id="applyPump" data-v="${newCap}" style="margin-top:10px">Update ${escapeHtml(pumpName(p))} → ${fmt(newCap,1)} GPH</button></div>`;
+  } else html+=`<p class="muted">Pump check needs the dialed pump % recorded on a pass.</p>`;
+  if(isFinite(sErr)){ const newCal=p.cal/(1+sErr);
+    html+=`<div class="result" style="margin-top:10px"><div class="grid2">
+      ${gridRow("Pivot vs dial",(sErr>=0?"+":"")+fmt(sErr*100,0)+"% "+(sErr>=0?"faster":"slower"))}
+      ${gridRow("Current calibration",fmt(p.cal,2)+(isTimer(p)?" hr@100%":" hr/in"))}
+      ${gridRow("Suggested calibration",fmt(newCal,2))}</div>
+      <button class="sm" id="applyCal" data-v="${newCal}" style="margin-top:10px">Update ${escapeHtml(p.name)} calibration → ${fmt(newCal,2)}</button></div>`;
+  } else html+=`<p class="muted" style="margin-top:8px">Pivot check needs the dialed speed recorded on a pass.</p>`;
+  body.innerHTML=html;
+  const apl=$("applyPump"); if(apl) apl.onclick=()=>{ pumps[pivots[selIdx].pump].cap=parseFloat(apl.dataset.v); saveAll(); renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog(); };
+  const acl=$("applyCal"); if(acl) acl.onclick=()=>{ pivots[selIdx].cal=parseFloat(acl.dataset.v); saveAll(); renderSelect(); applyPivotDefaults(); renderLog(); };
+}
+
+$("histHead").onclick=()=>$("histCard").classList.toggle("collapsed");
+$("calHead").onclick=()=>$("calCard").classList.toggle("collapsed");
+
 /* ---------- backup / restore ---------- */
 $("backupHead").onclick=()=>{
   const c=$("backupCard"); c.classList.toggle("collapsed");
   if(!c.classList.contains("collapsed") && !$("backupText").value.trim()) buildBackupText();
 };
 function buildBackupText(){
-  $("backupText").value = JSON.stringify({app:"pivotpump",v:1,pumps,pivots,selIdx});
+  $("backupText").value = JSON.stringify({app:"pivotpump",v:2,pumps,pivots,passes,selIdx});
 }
 $("copyBackup").onclick=()=>{
   buildBackupText();
@@ -714,19 +986,20 @@ $("restoreBackup").onclick=()=>{
   if(!data||!Array.isArray(data.pumps)||!Array.isArray(data.pivots)||!data.pumps.length||!data.pivots.length){
     $("backupMsg").textContent="⚠️ Backup is missing pumps or pivots."; return;
   }
-  if(!confirm("Restore "+data.pivots.length+" pivots and "+data.pumps.length+" pumps? This replaces what's here now.")) return;
-  pumps=data.pumps; pivots=data.pivots;
+  const np=Array.isArray(data.passes)?data.passes.length:0;
+  if(!confirm("Restore "+data.pivots.length+" pivots, "+data.pumps.length+" pumps and "+np+" logged passes? This replaces what's here now.")) return;
+  pumps=data.pumps; pivots=data.pivots; passes=Array.isArray(data.passes)?data.passes:[];
   selIdx=Number.isInteger(data.selIdx)&&data.selIdx<pivots.length?data.selIdx:0;
   saveAll();
-  renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults();
-  $("backupMsg").textContent="✅ Restored "+pivots.length+" pivots and "+pumps.length+" pumps.";
+  renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog();
+  $("backupMsg").textContent="✅ Restored "+pivots.length+" pivots, "+pumps.length+" pumps and "+np+" passes.";
 };
 
 /* recompute on any input */
 document.querySelectorAll("input").forEach(el=>el.addEventListener("input",computeAll));
 
 /* ---------- boot ---------- */
-renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults();
+renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog();
 </script>
 </body>
 </html>
