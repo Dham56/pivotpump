@@ -340,7 +340,10 @@
       </div>
     </div>
     <div id="trackResult"></div>
-    <button class="ghost sm" id="logCheckBtn" style="margin-top:10px;display:none">Save this check to activity log</button>
+    <div id="logCheckWrap" style="display:none;margin-top:10px">
+      <button class="ghost sm" id="logCheckBtn">Save to log now</button>
+      <span class="muted" id="logCheckHint" style="margin-left:8px">Auto-saves a few seconds after you stop typing.</span>
+    </div>
 
     <details id="accDetails">
       <summary>Check pump &amp; pivot speed accuracy (optional)</summary>
@@ -698,21 +701,23 @@ function arcProgress(){
   return {total,covered,remain:Math.max(total-covered,0),begin,current,dir};
 }
 
-let lastTrack=null;
+let lastTrack=null, trackAutoTimer=null, lastAutoTrackMsg="";
+function clearTrackAuto(){ if(trackAutoTimer){ clearTimeout(trackAutoTimer); trackAutoTimer=null; } }
+function noteTrackSaved(){ const h=$("logCheckHint"); if(h) h.textContent="✓ Saved to log "+new Date().toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}); }
 function computeTrack(){
   const p=pivots[selIdx];
   const orig=num($("t_orig")), cur=num($("t_tank"));
-  const out=$("trackResult"), btn=$("logCheckBtn");
+  const out=$("trackResult"), wrap=$("logCheckWrap");
   computeAccuracy(); // optional breakdown runs independently
   const ap=arcProgress();
-  if(!ap||![orig,cur].every(isFinite)||orig<=0||cur<0||cur>orig){ out.innerHTML=""; if(btn)btn.style.display="none"; lastTrack=null; return; }
+  if(!ap||![orig,cur].every(isFinite)||orig<=0||cur<0||cur>orig){ out.innerHTML=""; if(wrap)wrap.style.display="none"; lastTrack=null; clearTrackAuto(); return; }
   const {total,covered,remain,begin,current,dir}=ap;
   const dsym = dir==="rev"?"⟲ rev":"⟳ fwd";
-  if(covered<=0||remain<=0){ out.innerHTML=`<div class="verdict warn" style="margin-top:12px">Enter beginning &amp; current position (so there's some progress) and a drop in gallons, and I'll measure your actual pace.</div>`; if(btn)btn.style.display="none"; lastTrack=null; return; }
+  if(covered<=0||remain<=0){ out.innerHTML=`<div class="verdict warn" style="margin-top:12px">Enter beginning &amp; current position (so there's some progress) and a drop in gallons, and I'll measure your actual pace.</div>`; if(wrap)wrap.style.display="none"; lastTrack=null; clearTrackAuto(); return; }
 
   const curPivot=num($("t_speed")), curPump=num($("t_setting"));
   const used=orig-cur;
-  if(btn){ btn.style.display="block"; btn.textContent="Save this check to activity log"; }
+  if(wrap){ wrap.style.display="block"; const h=$("logCheckHint"); if(h) h.textContent="Auto-saves a few seconds after you stop typing."; }
   const usedFrac=used/orig, doneFrac=covered/total;          // should match if on track
   const galPerDeg=used/covered;                               // your real pace
   const projUse=galPerDeg*remain;                             // gallons you'll use over the rest at this pace
@@ -777,6 +782,13 @@ function computeTrack(){
   if(isFinite(newPivot)) rec+=` → pivot ${pivStr(newPivot)}`;
   if(isFinite(newPump)&&newPump<=100) rec+=`${rec?" /":" →"} pump ${fmt(newPump,1)}%`;
   lastTrack={msg:`On-track ${p.name}: ${fmt(begin,0)}°→${fmt(current,0)}° ${dsym}, covered ${fmt(covered,0)}°, ${fmt(remain,0)}° to cover; ${fmt(cur,0)}/${fmt(orig,0)} gal; pace ${fmt(galPerDeg,2)} gal/°; ${endTxt}${rec}`};
+
+  // auto-save to the audit trail once the numbers settle (deduped) — no button to forget
+  clearTrackAuto();
+  trackAutoTimer=setTimeout(()=>{
+    trackAutoTimer=null;
+    if(lastTrack && lastTrack.msg!==lastAutoTrackMsg){ logAction(lastTrack.msg); lastAutoTrackMsg=lastTrack.msg; noteTrackSaved(); }
+  },4000);
 }
 
 // optional: compare actual pump rate & pivot speed to the dialed settings
@@ -1100,7 +1112,7 @@ $("restoreBackup").onclick=()=>{
 /* recompute on any input */
 document.querySelectorAll("input").forEach(el=>el.addEventListener("input",computeAll));
 $("t_dir").addEventListener("change",computeAll);
-$("logCheckBtn").onclick=()=>{ if(!lastTrack) return; logAction(lastTrack.msg); $("logCheckBtn").textContent="Saved ✓ to activity log"; };
+$("logCheckBtn").onclick=()=>{ if(!lastTrack) return; clearTrackAuto(); logAction(lastTrack.msg); lastAutoTrackMsg=lastTrack.msg; noteTrackSaved(); };
 
 /* ---------- boot ---------- */
 renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog(); renderActivityLog();
