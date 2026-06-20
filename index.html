@@ -200,6 +200,24 @@
     </div>
   </div>
 
+  <!-- ACTIVITY LOG -->
+  <div class="card collapsed" id="actCard">
+    <div class="secthead" id="actHead">
+      <h2 style="margin:0">🧾 Activity log</h2>
+      <span class="pill" id="actPill"></span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="body">
+      <p class="muted" style="margin-top:10px">A running record of changes you make in the app — pump &amp; pivot edits, passes, calibrations, restores — so you can look back and figure out what happened. Saved on this device only.</p>
+      <div id="actList"></div>
+      <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
+        <button class="ghost sm" id="copyLog">Copy log</button>
+        <button class="danger sm" id="clearLog">Clear log</button>
+      </div>
+      <div id="actMsg" class="muted" style="margin-top:6px"></div>
+    </div>
+  </div>
+
   <!-- MODE TABS -->
   <div class="tabs">
     <button data-mode="speed" class="active">Find pivot speed</button>
@@ -375,10 +393,10 @@ const SEED_PIVOTS = [
   {name:"East Young", mode:"timer", cal:9.72,   deg:360, pump:3, tank:3000, gpm:425, acres:122,   defSpeed:11},
   {name:"West Young", mode:"timer", cal:14.88,  deg:360, pump:4, tank:3000, gpm:500, acres:121.4, defSpeed:18},
 ];
-const K_PUMPS="pivotpump.pumps.v1", K_PIVOTS="pivotpump.pivots.v3", K_SEL="pivotpump.selected.v3", K_OLD="pivotpump.pivots.v2", K_PASSES="pivotpump.passes.v1";
+const K_PUMPS="pivotpump.pumps.v1", K_PIVOTS="pivotpump.pivots.v3", K_SEL="pivotpump.selected.v3", K_OLD="pivotpump.pivots.v2", K_PASSES="pivotpump.passes.v1", K_LOG="pivotpump.activity.v1";
 
 /* ---------- load with migration from the old per-pivot-size format ---------- */
-let pumps, pivots, selIdx, passes;
+let pumps, pivots, selIdx, passes, actlog;
 (function load(){
   let sp=null, sv=null;
   try{ sp=JSON.parse(localStorage.getItem(K_PUMPS)); }catch(e){}
@@ -400,7 +418,14 @@ let pumps, pivots, selIdx, passes;
   selIdx = parseInt(localStorage.getItem(K_SEL)||"0",10)||0;
   if(selIdx>=pivots.length) selIdx=0;
   try{ const pp=JSON.parse(localStorage.getItem(K_PASSES)); passes=Array.isArray(pp)?pp:[]; }catch(e){ passes=[]; }
+  try{ const lg=JSON.parse(localStorage.getItem(K_LOG)); actlog=Array.isArray(lg)?lg:[]; }catch(e){ actlog=[]; }
 })();
+function saveLog(){ try{ localStorage.setItem(K_LOG,JSON.stringify(actlog)); }catch(e){} }
+function logAction(msg){
+  actlog.push({t:Date.now(),msg});
+  if(actlog.length>1000) actlog=actlog.slice(-1000);
+  saveLog(); renderActivityLog();
+}
 function saveAll(){ try{
   localStorage.setItem(K_PUMPS,JSON.stringify(pumps));
   localStorage.setItem(K_PIVOTS,JSON.stringify(pivots));
@@ -470,6 +495,7 @@ function renderPumps(){
       <button class="danger tiny" data-del="${i}">✕</button>
     </div>`).join("");
   list.querySelectorAll("input").forEach(inp=>{
+    inp.addEventListener("focus",e=>{ e.target.dataset.old=e.target.value; });
     inp.addEventListener("input",e=>{
       const row=e.target.closest(".pumprow"); const i=+row.dataset.i; const f=e.target.dataset.f;
       pumps[i][f] = f==="cap" ? (parseFloat(e.target.value)||0) : e.target.value;
@@ -477,6 +503,12 @@ function renderPumps(){
       // refresh capacity fields in the modes (auto ones)
       ["s_size","p_size","t_size"].forEach(id=>$(id).dataset.auto="1");
       applyPivotDefaults();
+    });
+    inp.addEventListener("change",e=>{
+      const old=e.target.dataset.old, val=e.target.value;
+      if(old===undefined||old===val) return;
+      const row=e.target.closest(".pumprow"); const i=+row.dataset.i; const f=e.target.dataset.f;
+      logAction(f==="cap" ? `Pump "${pumps[i].name}" capacity ${old} → ${val} GPH` : `Pump renamed "${old}" → "${val}"`);
     });
   });
   list.querySelectorAll("button[data-del]").forEach(b=>{
@@ -486,13 +518,15 @@ function renderPumps(){
       const users=pivots.filter(p=>p.pump===i).map(p=>p.name);
       if(users.length){ alert("Can't delete — in use by: "+users.join(", ")+".\nAssign those pivots a different pump first."); return; }
       if(!confirm("Delete pump \""+pumps[i].name+"\"?")) return;
+      const delName=pumps[i].name;
       pumps.splice(i,1);
       pivots.forEach(p=>{ if(p.pump>i) p.pump--; });
       saveAll(); renderPumps(); renderSelect(); rebuildPumpSelect(); applyPivotDefaults();
+      logAction(`Deleted pump "${delName}"`);
     };
   });
 }
-$("addPumpBtn").onclick=()=>{ pumps.push({name:"New pump",cap:30}); saveAll(); renderPumps(); rebuildPumpSelect(); };
+$("addPumpBtn").onclick=()=>{ pumps.push({name:"New pump",cap:30}); saveAll(); renderPumps(); rebuildPumpSelect(); logAction(`Added pump "New pump" (30 GPH)`); };
 $("pumpHead").onclick=()=> $("pumpCard").classList.toggle("collapsed");
 
 function rebuildPumpSelect(){
@@ -556,15 +590,19 @@ $("saveBtn").onclick=()=>{
     acres:parseFloat($("e_acres").value)||0,
     defSpeed:mode==="timer"?15:0.30,
   };
+  const wasNew=editingNew;
   if(editingNew){ pivots.push(p); selIdx=pivots.length-1; }
   else { p.defSpeed=pivots[selIdx].defSpeed||p.defSpeed; pivots[selIdx]=p; }
-  saveAll(); closeEditor(); renderSelect(); resetAuto(); applyPivotDefaults();
+  saveAll(); closeEditor(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog();
+  logAction(`${wasNew?"Added":"Edited"} pivot "${p.name}" — ${p.mode}, cal ${p.cal}, ${p.deg}°, pump "${(pumps[p.pump]||{}).name||"?"}", tank ${p.tank}`);
 };
 $("deleteBtn").onclick=()=>{
   if(pivots.length<=1){ alert("Keep at least one pivot."); return; }
   if(!confirm("Delete \""+pivots[selIdx].name+"\"?")) return;
+  const delName=pivots[selIdx].name;
   pivots.splice(selIdx,1); if(selIdx>=pivots.length) selIdx=pivots.length-1;
-  saveAll(); closeEditor(); renderSelect(); resetAuto(); applyPivotDefaults();
+  saveAll(); closeEditor(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog();
+  logAction(`Deleted pivot "${delName}"`);
 };
 $("pivotSel").onchange=e=>{
   selIdx=parseInt(e.target.value,10); saveAll();
@@ -839,6 +877,7 @@ function startPass(){
     product:$("lg_product").value.trim(), date:t0, status:"active", ranDry:false,
     readings:[{pos:0,gal:startGal,t:t0}] });
   saveAll(); renderLog();
+  logAction(`Started pass — ${p.name}, ${fmt(startGal,0)} gal, ${fmt(totalDeg,0)}°`);
 }
 
 function activePassHtml(ap){
@@ -863,17 +902,21 @@ function wireActivePass(ap){
     const pos=parseFloat($("lg_pos").value), gal=parseFloat($("lg_galnow").value);
     if(!isFinite(pos)||!isFinite(gal)){ alert("Enter both pivot position and gallons."); return; }
     ap.readings.push({pos,gal,t:Date.now()}); ap.readings.sort((a,b)=>a.t-b.t); saveAll(); renderLog();
+    logAction(`Logged reading — ${ap.pivot} ${fmt(pos,0)}°, ${fmt(gal,0)} gal`);
   };
   $("dryBtn").onclick=()=>{
     const pos=parseFloat($("lg_pos").value), at=isFinite(pos)?pos:summarize(ap).lastPos;
     ap.readings.push({pos:at,gal:0,t:Date.now()}); ap.ranDry=true; saveAll(); renderLog();
+    logAction(`Marked tank dry — ${ap.pivot} at ${fmt(at,0)}°`);
   };
   $("finishBtn").onclick=()=>{
     if(ap.readings.length<2){ alert("Log at least two readings before finishing."); return; }
-    ap.status="done"; ap.endGal=ap.readings[ap.readings.length-1].gal; saveAll(); renderLog();
+    ap.status="done"; ap.endGal=ap.readings[ap.readings.length-1].gal;
+    const s=summarize(ap); saveAll(); renderLog();
+    logAction(`Finished pass — ${ap.pivot}, applied ${fmt(s.applied,0)} gal, ${fmt(s.dosedPct,0)}% dosed${s.wedge>0?`, ${fmt(s.wedge,0)}° dry`:`, ${fmt(s.cu,0)}% even`}`);
     document.querySelector('.card.mode[data-mode="log"]').scrollIntoView({behavior:"smooth",block:"start"});
   };
-  $("delPassBtn").onclick=()=>{ if(!confirm("Discard this in-progress pass?")) return; passes=passes.filter(x=>x.id!==ap.id); saveAll(); renderLog(); };
+  $("delPassBtn").onclick=()=>{ if(!confirm("Discard this in-progress pass?")) return; passes=passes.filter(x=>x.id!==ap.id); saveAll(); renderLog(); logAction(`Discarded in-progress pass — ${ap.pivot}`); };
   $("logBody").querySelectorAll(".x[data-delread]").forEach(x=>x.onclick=()=>{
     const i=+x.dataset.delread;
     if(ap.readings.length<=1){ alert("Keep at least the start reading, or Discard the pass."); return; }
@@ -907,7 +950,7 @@ function renderHistory(){
   }).join("");
   const totals=`<div style="margin-top:6px">`+Object.entries(byPivot).map(([nm,v])=>`<div class="tot"><span>${escapeHtml(nm)} <span class="muted">(${v.n})</span></span><b>${fmt(v.gal,0)} gal</b></div>`).join("")+`<div class="tot"><span><b>All pivots</b></span><b>${fmt(grand,0)} gal</b></div></div>`;
   body.innerHTML=items+totals+`<button class="ghost sm" id="copyHist" style="margin-top:10px">Copy history as CSV</button><div id="histMsg" class="muted" style="margin-top:6px"></div>`;
-  body.querySelectorAll("button[data-delpass]").forEach(b=>b.onclick=()=>{ if(!confirm("Delete this pass from history?")) return; passes=passes.filter(x=>x.id!==b.dataset.delpass); saveAll(); renderLog(); });
+  body.querySelectorAll("button[data-delpass]").forEach(b=>b.onclick=()=>{ if(!confirm("Delete this pass from history?")) return; const gone=passes.find(x=>x.id===b.dataset.delpass); passes=passes.filter(x=>x.id!==b.dataset.delpass); saveAll(); renderLog(); if(gone) logAction(`Deleted pass from history — ${gone.pivot}${gone.date?" "+new Date(gone.date).toLocaleDateString():""}`); });
   $("copyHist").onclick=()=>copyHistCsv(done);
 }
 
@@ -956,12 +999,29 @@ function renderCalibration(){
       <button class="sm" id="applyCal" data-v="${newCal}" style="margin-top:10px">Update ${escapeHtml(p.name)} calibration → ${fmt(newCal,2)}</button></div>`;
   } else html+=`<p class="muted" style="margin-top:8px">Pivot check needs the dialed speed recorded on a pass.</p>`;
   body.innerHTML=html;
-  const apl=$("applyPump"); if(apl) apl.onclick=()=>{ pumps[pivots[selIdx].pump].cap=parseFloat(apl.dataset.v); saveAll(); renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog(); };
-  const acl=$("applyCal"); if(acl) acl.onclick=()=>{ pivots[selIdx].cal=parseFloat(acl.dataset.v); saveAll(); renderSelect(); applyPivotDefaults(); renderLog(); };
+  const apl=$("applyPump"); if(apl) apl.onclick=()=>{ const pu=pumps[pivots[selIdx].pump]; const old=pu.cap; pu.cap=parseFloat(apl.dataset.v); saveAll(); renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog(); logAction(`Calibration: pump "${pu.name}" capacity ${fmt(old,1)} → ${fmt(pu.cap,1)} GPH (from logged passes)`); };
+  const acl=$("applyCal"); if(acl) acl.onclick=()=>{ const old=pivots[selIdx].cal; pivots[selIdx].cal=parseFloat(acl.dataset.v); saveAll(); renderSelect(); applyPivotDefaults(); renderLog(); logAction(`Calibration: pivot "${pivots[selIdx].name}" cal ${fmt(old,2)} → ${fmt(pivots[selIdx].cal,2)} (from logged passes)`); };
 }
 
 $("histHead").onclick=()=>$("histCard").classList.toggle("collapsed");
 $("calHead").onclick=()=>$("calCard").classList.toggle("collapsed");
+
+/* ---------- activity log ---------- */
+function renderActivityLog(){
+  if(!$("actList")) return;
+  $("actPill").textContent = actlog.length+" event"+(actlog.length!==1?"s":"");
+  if(!actlog.length){ $("actList").innerHTML=`<p class="muted">No activity recorded yet.</p>`; return; }
+  $("actList").innerHTML = `<div class="readlist">`+[...actlog].reverse().slice(0,300).map(e=>
+    `<div class="r"><span style="flex:0 0 92px;color:var(--muted);font-size:11px">${new Date(e.t).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><span class="c">${escapeHtml(e.msg)}</span></div>`
+  ).join("")+`</div>`+(actlog.length>300?`<p class="muted" style="margin-top:6px">Showing latest 300 of ${actlog.length}. Copy log for the full list.</p>`:"");
+}
+$("actHead").onclick=()=>{ $("actCard").classList.toggle("collapsed"); renderActivityLog(); };
+$("copyLog").onclick=()=>{
+  const text=actlog.map(e=>new Date(e.t).toISOString()+"  "+e.msg).join("\n");
+  const ok=()=>{ $("actMsg").textContent="✅ Copied "+actlog.length+" events."; };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok,()=>fallbackCopy(text,ok)); else fallbackCopy(text,ok);
+};
+$("clearLog").onclick=()=>{ if(!confirm("Clear the activity log? (Copy it first if you want a record.)")) return; actlog=[]; saveLog(); renderActivityLog(); $("actMsg").textContent="Log cleared."; };
 
 /* ---------- backup / restore ---------- */
 $("backupHead").onclick=()=>{
@@ -992,6 +1052,7 @@ $("restoreBackup").onclick=()=>{
   selIdx=Number.isInteger(data.selIdx)&&data.selIdx<pivots.length?data.selIdx:0;
   saveAll();
   renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog();
+  logAction(`Restored backup — ${pivots.length} pivots, ${pumps.length} pumps, ${np} passes`);
   $("backupMsg").textContent="✅ Restored "+pivots.length+" pivots, "+pumps.length+" pumps and "+np+" passes.";
 };
 
@@ -999,7 +1060,7 @@ $("restoreBackup").onclick=()=>{
 document.querySelectorAll("input").forEach(el=>el.addEventListener("input",computeAll));
 
 /* ---------- boot ---------- */
-renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog();
+renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog(); renderActivityLog();
 </script>
 </body>
 </html>
