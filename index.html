@@ -340,9 +340,8 @@
       </div>
     </div>
     <div id="trackResult"></div>
-    <div id="logCheckWrap" style="display:none;margin-top:10px">
-      <button class="ghost sm" id="logCheckBtn">Save to log now</button>
-      <span class="muted" id="logCheckHint" style="margin-left:8px">Auto-saves a few seconds after you stop typing.</span>
+    <div id="logCheckWrap" class="muted" style="display:none;margin-top:10px">
+      <span id="logCheckHint"></span>
     </div>
 
     <details id="accDetails">
@@ -701,9 +700,14 @@ function arcProgress(){
   return {total,covered,remain:Math.max(total-covered,0),begin,current,dir};
 }
 
-let lastTrack=null, trackAutoTimer=null, lastAutoTrackMsg="";
+let lastTrack=null, trackAutoTimer=null, lastAutoTrackMsg="", lastAutoTime="";
 function clearTrackAuto(){ if(trackAutoTimer){ clearTimeout(trackAutoTimer); trackAutoTimer=null; } }
-function noteTrackSaved(){ const h=$("logCheckHint"); if(h) h.textContent="✓ Saved to log "+new Date().toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}); }
+function updateTrackStatus(){
+  const h=$("logCheckHint"); if(!h) return;
+  h.textContent = (lastTrack && lastTrack.msg===lastAutoTrackMsg && lastAutoTime)
+    ? "✓ Saved to activity log "+lastAutoTime
+    : "Saving to activity log…";
+}
 function computeTrack(){
   const p=pivots[selIdx];
   const orig=num($("t_orig")), cur=num($("t_tank"));
@@ -717,7 +721,7 @@ function computeTrack(){
 
   const curPivot=num($("t_speed")), curPump=num($("t_setting"));
   const used=orig-cur;
-  if(wrap){ wrap.style.display="block"; const h=$("logCheckHint"); if(h) h.textContent="Auto-saves a few seconds after you stop typing."; }
+  if(wrap) wrap.style.display="block";
   const usedFrac=used/orig, doneFrac=covered/total;          // should match if on track
   const galPerDeg=used/covered;                               // your real pace
   const projUse=galPerDeg*remain;                             // gallons you'll use over the rest at this pace
@@ -787,8 +791,13 @@ function computeTrack(){
   clearTrackAuto();
   trackAutoTimer=setTimeout(()=>{
     trackAutoTimer=null;
-    if(lastTrack && lastTrack.msg!==lastAutoTrackMsg){ logAction(lastTrack.msg); lastAutoTrackMsg=lastTrack.msg; noteTrackSaved(); }
+    if(lastTrack && lastTrack.msg!==lastAutoTrackMsg){
+      logAction(lastTrack.msg); lastAutoTrackMsg=lastTrack.msg;
+      lastAutoTime=new Date().toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+      updateTrackStatus();
+    }
   },4000);
+  updateTrackStatus();
 }
 
 // optional: compare actual pump rate & pivot speed to the dialed settings
@@ -1112,7 +1121,6 @@ $("restoreBackup").onclick=()=>{
 /* recompute on any input */
 document.querySelectorAll("input").forEach(el=>el.addEventListener("input",computeAll));
 $("t_dir").addEventListener("change",computeAll);
-$("logCheckBtn").onclick=()=>{ if(!lastTrack) return; clearTrackAuto(); logAction(lastTrack.msg); lastAutoTrackMsg=lastTrack.msg; noteTrackSaved(); };
 
 /* ---------- boot ---------- */
 renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog(); renderActivityLog();
