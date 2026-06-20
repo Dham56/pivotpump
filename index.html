@@ -312,8 +312,21 @@
         <input id="t_total" type="number" step="any" inputmode="decimal">
       </div>
       <div>
-        <label>Degrees left now</label>
-        <input id="t_deg" type="number" step="any" inputmode="decimal">
+        <label>Direction</label>
+        <select id="t_dir">
+          <option value="fwd">Forward (clockwise)</option>
+          <option value="rev">Reverse (counter-clockwise)</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Beginning position (°) <span class="hint">where the pass started</span></label>
+        <input id="t_begin" type="number" step="any" inputmode="decimal" value="0">
+      </div>
+      <div>
+        <label>Current position (°)</label>
+        <input id="t_current" type="number" step="any" inputmode="decimal">
       </div>
     </div>
     <div class="row">
@@ -327,6 +340,7 @@
       </div>
     </div>
     <div id="trackResult"></div>
+    <button class="ghost sm" id="logCheckBtn" style="margin-top:10px;display:none">Save this check to activity log</button>
 
     <details id="accDetails">
       <summary>Check pump &amp; pivot speed accuracy (optional)</summary>
@@ -673,17 +687,32 @@ function computePump(){
     </div>${warn}`;
 }
 
+// degrees covered = angular travel from begin to current in the chosen direction
+const mod360=x=>((x%360)+360)%360;
+function arcProgress(){
+  const total=num($("t_total")), begin=num($("t_begin")), current=num($("t_current"));
+  const dir=$("t_dir").value;
+  if(![total,begin,current].every(isFinite)||total<=0) return null;
+  let covered = dir==="rev" ? mod360(begin-current) : mod360(current-begin);
+  covered=Math.min(covered,total);
+  return {total,covered,remain:Math.max(total-covered,0),begin,current,dir};
+}
+
+let lastTrack=null;
 function computeTrack(){
   const p=pivots[selIdx];
-  const orig=num($("t_orig")), cur=num($("t_tank")), total=num($("t_total")), remain=num($("t_deg"));
-  const out=$("trackResult");
+  const orig=num($("t_orig")), cur=num($("t_tank"));
+  const out=$("trackResult"), btn=$("logCheckBtn");
   computeAccuracy(); // optional breakdown runs independently
-  if(![orig,cur,total,remain].every(isFinite)||orig<=0||cur<0||total<=0||remain<0||remain>=total||cur>orig){ out.innerHTML=""; return; }
+  const ap=arcProgress();
+  if(!ap||![orig,cur].every(isFinite)||orig<=0||cur<0||cur>orig){ out.innerHTML=""; if(btn)btn.style.display="none"; lastTrack=null; return; }
+  const {total,covered,remain,begin,current,dir}=ap;
+  const dsym = dir==="rev"?"⟲ rev":"⟳ fwd";
+  if(covered<=0||remain<=0){ out.innerHTML=`<div class="verdict warn" style="margin-top:12px">Enter beginning &amp; current position (so there's some progress) and a drop in gallons, and I'll measure your actual pace.</div>`; if(btn)btn.style.display="none"; lastTrack=null; return; }
 
   const curPivot=num($("t_speed")), curPump=num($("t_setting"));
-  const used=orig-cur, covered=total-remain;
-  if(covered<=0){ out.innerHTML=`<div class="verdict warn" style="margin-top:12px">Enter some progress (degrees left below the total) and a drop in gallons, and I'll measure your actual pace.</div>`; return; }
-
+  const used=orig-cur;
+  if(btn){ btn.style.display="block"; btn.textContent="Save this check to activity log"; }
   const usedFrac=used/orig, doneFrac=covered/total;          // should match if on track
   const galPerDeg=used/covered;                               // your real pace
   const projUse=galPerDeg*remain;                             // gallons you'll use over the rest at this pace
@@ -731,24 +760,36 @@ function computeTrack(){
     <div class="verdict ${cls}">${head}${fix}</div>
     <div class="result" style="margin-top:12px">
       <div class="grid2">
+        ${gridRow("Position",fmt(begin,0)+"° → "+fmt(current,0)+"° ("+dsym+")")}
+        ${gridRow("Degrees to cover",fmt(remain,0)+"° left of "+fmt(total,0)+"°")}
         ${gridRow("Fertilizer used",fmt(used,0)+" gal ("+fmt(usedFrac*100,0)+"%)")}
-        ${gridRow("Pass completed",fmt(covered,0)+"° of "+fmt(total,0)+"° ("+fmt(doneFrac*100,0)+"%)")}
+        ${gridRow("Pass completed",fmt(covered,0)+"° ("+fmt(doneFrac*100,0)+"%)")}
         ${gridRow("Actual pace",fmt(galPerDeg,2)+" gal/°")}
         ${gridRow("Need from here",fmt(needPace,2)+" gal/° to finish empty")}
         ${gridRow("Left in tank",fmt(cur,0)+" gal")}
         ${gridRow("At this pace, ends",end>=0?"with ~"+fmt(end,0)+" gal left":fmt(Math.max(remain-reachDeg,0),0)+"° short")}
       </div>
     </div>`;
+
+  // assemble a one-line record for the activity log
+  const endTxt = Math.abs(end)<=tol ? "on track" : (end>0?`~${fmt(end,0)} gal leftover projected`:`~${fmt(Math.max(remain-reachDeg,0),0)}° short projected`);
+  let rec="";
+  if(isFinite(newPivot)) rec+=` → pivot ${pivStr(newPivot)}`;
+  if(isFinite(newPump)&&newPump<=100) rec+=`${rec?" /":" →"} pump ${fmt(newPump,1)}%`;
+  lastTrack={msg:`On-track ${p.name}: ${fmt(begin,0)}°→${fmt(current,0)}° ${dsym}, covered ${fmt(covered,0)}°, ${fmt(remain,0)}° to cover; ${fmt(cur,0)}/${fmt(orig,0)} gal; pace ${fmt(galPerDeg,2)} gal/°; ${endTxt}${rec}`};
 }
 
 // optional: compare actual pump rate & pivot speed to the dialed settings
 function computeAccuracy(){
   const p=pivots[selIdx];
   const out=$("accResult");
-  const orig=num($("t_orig")), cur=num($("t_tank")), total=num($("t_total")), remain=num($("t_deg"));
+  const orig=num($("t_orig")), cur=num($("t_tank"));
   const hours=num($("t_hours")), setting=num($("t_setting")), size=num($("t_size")), speed=num($("t_speed"));
-  if(![orig,cur,total,remain,hours].every(isFinite)||hours<=0||orig<cur||total<=remain){ out.innerHTML=""; return; }
-  const used=orig-cur, covered=total-remain;
+  const ap=arcProgress();
+  if(!ap||![orig,cur,hours].every(isFinite)||hours<=0||orig<cur){ out.innerHTML=""; return; }
+  const {total,covered}=ap;
+  if(covered<=0){ out.innerHTML=""; return; }
+  const used=orig-cur;
   const rows=[];
 
   // pump accuracy
@@ -1058,6 +1099,8 @@ $("restoreBackup").onclick=()=>{
 
 /* recompute on any input */
 document.querySelectorAll("input").forEach(el=>el.addEventListener("input",computeAll));
+$("t_dir").addEventListener("change",computeAll);
+$("logCheckBtn").onclick=()=>{ if(!lastTrack) return; logAction(lastTrack.msg); $("logCheckBtn").textContent="Saved ✓ to activity log"; };
 
 /* ---------- boot ---------- */
 renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog(); renderActivityLog();
