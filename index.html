@@ -769,6 +769,22 @@ function computeTrack(){
   const needPace=cur/remain;                                  // target gal/deg from here
   const factor=needPace/galPerDeg;                            // <1 = ease off, >1 = more
 
+  // actual GPH & °/hr since the last logged check for this pivot (handles a stopped/idle pivot, refill)
+  let sinceLast=null;
+  const lc=p.lastCheck;
+  if(lc && isFinite(lc.t) && isFinite(lc.covered) && isFinite(lc.gal)){
+    const dHr=(Date.now()-lc.t)/3600000, dDeg=covered-lc.covered, dGal=lc.gal-cur;
+    const moved=dDeg>=2, used2=dGal>=2;
+    if(dHr>=0.02){                                  // ignore intervals under ~1 min
+      if(dDeg<-2) sinceLast=null;                   // position reset → new pass, skip
+      else if(dGal<-1) sinceLast={status:"refill",dHr};            // gallons went up
+      else if(!moved && !used2) sinceLast={status:"idle",dHr};     // pivot & pump both off
+      else if(!moved) sinceLast={status:"stopped",dHr,dGal};       // pivot off, pump ran
+      else if(dGal<=0) sinceLast={status:"nopump",dHr,degHr:dDeg/dHr}; // moving, no fertilizer
+      else sinceLast={status:"ok",dHr,dDeg,dGal,gph:dGal/dHr,degHr:dDeg/dHr};
+    }
+  }
+
   // absolute new settings: scale the CURRENT dial by the factor (calibration error cancels).
   // pump rate ∝ setting% ; timer speed ∝ % (gal/° ∝ 1/%); depth: gal/° ∝ inches
   const newPump = isFinite(curPump)&&curPump>0 ? curPump*factor : NaN;
@@ -820,6 +836,11 @@ function computeTrack(){
         ${gridRow("Need from here",fmt(needPace,2)+" gal/° to finish empty")}
         ${gridRow("Left in tank",fmt(cur,0)+" gal")}
         ${gridRow("At this pace, ends",end>=0?"with ~"+fmt(end,0)+" gal left":fmt(Math.max(remain-reachDeg,0),0)+"° short")}
+        ${sinceLast&&sinceLast.status==="ok"?gridRow("Since last check",fmt(sinceLast.gph,1)+" GPH · "+fmt(sinceLast.degHr,1)+" °/hr"):""}
+        ${sinceLast&&sinceLast.status==="stopped"?gridRow("Since last check","pivot stopped ("+fmt(sinceLast.dGal,0)+" gal used, no movement)"):""}
+        ${sinceLast&&sinceLast.status==="idle"?gridRow("Since last check","idle — pivot & pump off, no change"):""}
+        ${sinceLast&&sinceLast.status==="nopump"?gridRow("Since last check",fmt(sinceLast.degHr,1)+" °/hr, no fertilizer used"):""}
+        ${sinceLast&&sinceLast.status==="refill"?gridRow("Since last check","tank refilled — rate skipped"):""}
       </div>
     </div>`;
 
@@ -830,15 +851,27 @@ function computeTrack(){
     if(essentiallyEmpty) rec=" → tank essentially empty; refill or accept shortfall";
     else { const a=recParts(); rec = a.length? " → "+a.map(x=>x.plain).join(" / ") : " → no setting can fix from here (would exceed limits)"; }
   }
-  lastTrack={msg:`On-track ${p.name}: ${fmt(begin,0)}°→${fmt(current,0)}° ${dsym}, covered ${fmt(covered,0)}°, ${fmt(remain,0)}° to cover; ${fmt(cur,0)}/${fmt(orig,0)} gal; pace ${fmt(galPerDeg,2)} gal/°; ${endTxt}${rec}`};
+  let ratePart="";
+  if(sinceLast){
+    if(sinceLast.status==="ok") ratePart=`; actual ${fmt(sinceLast.gph,1)} GPH, ${fmt(sinceLast.degHr,1)} °/hr (last ${fmt(sinceLast.dHr,1)}h)`;
+    else if(sinceLast.status==="stopped") ratePart=`; pivot stopped since last check (${fmt(sinceLast.dGal,0)} gal used, no movement over ${fmt(sinceLast.dHr,1)}h)`;
+    else if(sinceLast.status==="idle") ratePart=`; idle since last check (pivot & pump off ${fmt(sinceLast.dHr,1)}h)`;
+    else if(sinceLast.status==="nopump") ratePart=`; ${fmt(sinceLast.degHr,1)} °/hr, no fertilizer used since last check`;
+    else if(sinceLast.status==="refill") ratePart=`; refilled since last check (rate skipped)`;
+  }
+  lastTrack={pivotObj:p, snap:{covered,gal:cur},
+    msg:`On-track ${p.name}: ${fmt(begin,0)}°→${fmt(current,0)}° ${dsym}, covered ${fmt(covered,0)}°, ${fmt(remain,0)}° to cover; ${fmt(cur,0)}/${fmt(orig,0)} gal; pace ${fmt(galPerDeg,2)} gal/°${ratePart}; ${endTxt}${rec}`};
 
   // auto-save to the audit trail once the numbers settle (deduped) — no button to forget
   clearTrackAuto();
   trackAutoTimer=setTimeout(()=>{
     trackAutoTimer=null;
     if(lastTrack && lastTrack.msg!==lastAutoTrackMsg){
+      const ft=Date.now();
       logAction(lastTrack.msg); lastAutoTrackMsg=lastTrack.msg;
-      lastAutoTime=new Date().toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+      lastAutoTime=new Date(ft).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+      // remember this check so the next one can measure actual GPH & °/hr between them
+      if(lastTrack.pivotObj){ lastTrack.pivotObj.lastCheck={t:ft,covered:lastTrack.snap.covered,gal:lastTrack.snap.gal}; saveAll(); }
       updateTrackStatus();
     }
   },4000);
