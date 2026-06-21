@@ -89,6 +89,17 @@
   .passitem .meta{font-size:12px;color:var(--muted)}
   .tot{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-top:1px solid var(--line)}
   .tot b{color:var(--green-dk)}
+  /* notes & photos */
+  .photobtn{display:inline-block;padding:9px 12px;border:1px solid var(--line);border-radius:9px;cursor:pointer;background:#fff;color:var(--green-dk);font-weight:600;font-size:13px}
+  .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .thumbs .th{position:relative}
+  .thumbs img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#eef2ef;cursor:pointer;display:block}
+  .thumbs .rm{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border-radius:50%;width:18px;height:18px;font-size:12px;line-height:18px;text-align:center;cursor:pointer}
+  .noteitem{border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px}
+  .noteitem .nmeta{font-size:11px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .noteitem .ntext{white-space:pre-wrap;margin-top:4px;font-size:14px}
+  .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:100;padding:18px}
+  .lightbox img{max-width:100%;max-height:100%;border-radius:8px}
   .secthead{display:flex;align-items:center;gap:8px;cursor:pointer}
   .secthead .chev{margin-left:auto;color:var(--muted);transition:transform .15s}
   .collapsed .chev{transform:rotate(-90deg)}
@@ -224,6 +235,7 @@
     <button data-mode="pump">Find pump setting</button>
     <button data-mode="track">On-track check</button>
     <button data-mode="log">Log &amp; history</button>
+    <button data-mode="notes">Notes</button>
   </div>
 
   <!-- MODE: FIND PIVOT SPEED -->
@@ -384,6 +396,22 @@
     </div>
   </div>
 
+  <!-- MODE: NOTES -->
+  <div class="card mode" data-mode="notes" hidden>
+    <h2>Notes &amp; photos</h2>
+    <p class="muted">Jot anything — field conditions, problems, reminders — and attach photos. Each note is timestamped and tagged with the current pivot. Saved on this device; note text travels in Backup, photos stay on this device.</p>
+    <textarea id="noteText" rows="3" placeholder="Type a note…"></textarea>
+    <div class="thumbs" id="noteThumbs"></div>
+    <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
+      <label class="photobtn">📷 Add photo<input id="notePhoto" type="file" accept="image/*" capture="environment" multiple style="display:none"></label>
+      <button class="sm" id="saveNoteBtn">Save note</button>
+      <span class="muted" id="noteMsg"></span>
+    </div>
+    <div id="notesList" style="margin-top:14px"></div>
+  </div>
+
+  <div id="lightboxHost"></div>
+
   <p class="note">PivotPump v1 · pivots &amp; pumps are saved in this browser. Math mirrors the HJV pivot spreadsheet: injection rate = pump max capacity × setting% ÷ 100, and "finished properly" means the tank empties as the pass completes. Timer pivots: pass time = hrs@100% ÷ (timer%/100). Depth pivots: pass time = hrs/inch × target inches.</p>
 </div>
 
@@ -409,10 +437,10 @@ const SEED_PIVOTS = [
   {name:"East Young", mode:"timer", cal:9.72,   deg:360, pump:3, tank:3000, gpm:425, acres:122,   defSpeed:11},
   {name:"West Young", mode:"timer", cal:14.88,  deg:360, pump:4, tank:3000, gpm:500, acres:121.4, defSpeed:18},
 ];
-const K_PUMPS="pivotpump.pumps.v1", K_PIVOTS="pivotpump.pivots.v3", K_SEL="pivotpump.selected.v3", K_OLD="pivotpump.pivots.v2", K_PASSES="pivotpump.passes.v1", K_LOG="pivotpump.activity.v1";
+const K_PUMPS="pivotpump.pumps.v1", K_PIVOTS="pivotpump.pivots.v3", K_SEL="pivotpump.selected.v3", K_OLD="pivotpump.pivots.v2", K_PASSES="pivotpump.passes.v1", K_LOG="pivotpump.activity.v1", K_NOTES="pivotpump.notes.v1", K_DRAFT="pivotpump.notedraft.v1";
 
 /* ---------- load with migration from the old per-pivot-size format ---------- */
-let pumps, pivots, selIdx, passes, actlog;
+let pumps, pivots, selIdx, passes, actlog, notes, draft;
 (function load(){
   let sp=null, sv=null;
   try{ sp=JSON.parse(localStorage.getItem(K_PUMPS)); }catch(e){}
@@ -435,7 +463,10 @@ let pumps, pivots, selIdx, passes, actlog;
   if(selIdx>=pivots.length) selIdx=0;
   try{ const pp=JSON.parse(localStorage.getItem(K_PASSES)); passes=Array.isArray(pp)?pp:[]; }catch(e){ passes=[]; }
   try{ const lg=JSON.parse(localStorage.getItem(K_LOG)); actlog=Array.isArray(lg)?lg:[]; }catch(e){ actlog=[]; }
+  try{ const nn=JSON.parse(localStorage.getItem(K_NOTES)); notes=Array.isArray(nn)?nn:[]; }catch(e){ notes=[]; }
+  try{ const dd=JSON.parse(localStorage.getItem(K_DRAFT)); draft=(dd&&typeof dd==="object")?dd:{text:"",imgs:[]}; }catch(e){ draft={text:"",imgs:[]}; }
 })();
+function saveDraft(){ try{ localStorage.setItem(K_DRAFT,JSON.stringify(draft)); }catch(e){} }
 function saveLog(){ try{ localStorage.setItem(K_LOG,JSON.stringify(actlog)); }catch(e){} }
 function logAction(msg){
   actlog.push({t:Date.now(),msg});
@@ -446,6 +477,7 @@ function saveAll(){ try{
   localStorage.setItem(K_PUMPS,JSON.stringify(pumps));
   localStorage.setItem(K_PIVOTS,JSON.stringify(pivots));
   localStorage.setItem(K_PASSES,JSON.stringify(passes));
+  localStorage.setItem(K_NOTES,JSON.stringify(notes));
   localStorage.setItem(K_SEL,String(selIdx));
 }catch(e){} }
 
@@ -634,6 +666,7 @@ document.querySelectorAll(".tabs button").forEach(btn=>{
     const m=btn.dataset.mode;
     document.querySelectorAll(".card.mode").forEach(c=>c.hidden=c.dataset.mode!==m);
     if(m==="log") renderLog();
+    if(m==="notes") renderNotes();
   };
 });
 
@@ -1085,13 +1118,85 @@ $("copyLog").onclick=()=>{
 };
 $("clearLog").onclick=()=>{ if(!confirm("Clear the activity log? (Copy it first if you want a record.)")) return; actlog=[]; saveLog(); renderActivityLog(); $("actMsg").textContent="Log cleared."; };
 
+/* ===================== NOTES & PHOTOS ===================== */
+// photos live in IndexedDB (large quota); note text/meta in localStorage (and backup)
+function openIDB(){ return new Promise((res,rej)=>{ let r; try{ r=indexedDB.open("pivotpump",1); }catch(e){ return rej(e); } r.onupgradeneeded=()=>r.result.createObjectStore("images"); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function idbPut(key,val){ const db=await openIDB(); return new Promise((res,rej)=>{ const tx=db.transaction("images","readwrite"); tx.objectStore("images").put(val,key); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
+async function idbGet(key){ const db=await openIDB(); return new Promise((res,rej)=>{ const tx=db.transaction("images","readonly"); const q=tx.objectStore("images").get(key); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
+async function idbDel(key){ const db=await openIDB(); return new Promise((res)=>{ const tx=db.transaction("images","readwrite"); tx.objectStore("images").delete(key); tx.oncomplete=()=>res(); tx.onerror=()=>res(); }); }
+
+function resizeImage(file,maxDim=1280,q=0.7){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file), img=new Image();
+    img.onload=()=>{ URL.revokeObjectURL(url);
+      let w=img.naturalWidth,h=img.naturalHeight; const sc=Math.min(1,maxDim/Math.max(w,h));
+      w=Math.max(1,Math.round(w*sc)); h=Math.max(1,Math.round(h*sc));
+      const c=document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      try{ res(c.toDataURL("image/jpeg",q)); }catch(e){ rej(e); }
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("Could not read image")); };
+    img.src=url;
+  });
+}
+function loadThumb(imgEl,imgId){ idbGet(imgId).then(d=>{ if(d) imgEl.src=d; else imgEl.alt="photo not on this device"; }).catch(()=>{ imgEl.alt="photo unavailable"; }); }
+function openLightbox(imgId){ idbGet(imgId).then(d=>{ if(!d) return; const lb=document.createElement("div"); lb.className="lightbox"; lb.innerHTML=`<img alt="">`; lb.querySelector("img").src=d; lb.onclick=()=>lb.remove(); $("lightboxHost").appendChild(lb); }); }
+
+function renderDraftThumbs(){
+  const host=$("noteThumbs"); if(!host) return;
+  host.innerHTML=draft.imgs.map(id=>`<div class="th"><img data-img="${id}" alt=""><span class="rm" data-rm="${id}">✕</span></div>`).join("");
+  host.querySelectorAll("img[data-img]").forEach(im=>{ loadThumb(im,im.dataset.img); im.onclick=()=>openLightbox(im.dataset.img); });
+  host.querySelectorAll(".rm").forEach(b=>b.onclick=()=>{ const id=b.dataset.rm; draft.imgs=draft.imgs.filter(x=>x!==id); idbDel(id); saveDraft(); renderDraftThumbs(); });
+}
+function renderNotes(){
+  if(!$("notesList")) return;
+  if($("noteText") && document.activeElement!==$("noteText")) $("noteText").value=draft.text||"";
+  renderDraftThumbs();
+  const list=$("notesList");
+  if(!notes.length){ list.innerHTML=`<p class="muted">No notes yet.</p>`; return; }
+  list.innerHTML=[...notes].sort((a,b)=>b.t-a.t).map(n=>`
+    <div class="noteitem">
+      <div class="nmeta"><span>${new Date(n.t).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span>${n.pivot?`<span class="pill">${escapeHtml(n.pivot)}</span>`:""}<span data-delnote="${n.id}" style="margin-left:auto;color:var(--red);cursor:pointer;font-weight:700">Delete</span></div>
+      ${n.text?`<div class="ntext">${escapeHtml(n.text)}</div>`:""}
+      ${(n.imgs&&n.imgs.length)?`<div class="thumbs">`+n.imgs.map(id=>`<div class="th"><img data-img="${id}" alt=""></div>`).join("")+`</div>`:""}
+    </div>`).join("");
+  list.querySelectorAll("img[data-img]").forEach(im=>{ loadThumb(im,im.dataset.img); im.onclick=()=>openLightbox(im.dataset.img); });
+  list.querySelectorAll("[data-delnote]").forEach(b=>b.onclick=()=>{
+    if(!confirm("Delete this note?")) return;
+    const n=notes.find(x=>x.id===b.dataset.delnote); if(n&&n.imgs) n.imgs.forEach(idbDel);
+    notes=notes.filter(x=>x.id!==b.dataset.delnote); saveAll(); renderNotes();
+    logAction(`Deleted note${n&&n.pivot?" ("+n.pivot+")":""}`);
+  });
+}
+function wireNotes(){
+  $("noteText").addEventListener("input",e=>{ draft.text=e.target.value; saveDraft(); });
+  $("notePhoto").addEventListener("change",async e=>{
+    const files=[...e.target.files]; e.target.value=""; $("noteMsg").textContent="Adding photo…";
+    for(const f of files){
+      try{ const d=await resizeImage(f); const id=uid(); await idbPut(id,d); draft.imgs.push(id); saveDraft(); renderDraftThumbs(); $("noteMsg").textContent=""; }
+      catch(err){ $("noteMsg").textContent="Couldn't read one image (try a JPG/PNG)."; }
+    }
+  });
+  $("saveNoteBtn").onclick=()=>{
+    const text=(draft.text||"").trim();
+    if(!text && !draft.imgs.length){ $("noteMsg").textContent="Type a note or add a photo first."; return; }
+    const n={id:uid(),t:Date.now(),pivot:pivots[selIdx].name,text,imgs:draft.imgs.slice()};
+    notes.push(n); draft={text:"",imgs:[]}; saveDraft(); saveAll();
+    $("noteText").value=""; $("noteMsg").textContent="✓ Note saved.";
+    renderNotes();
+    logAction(`Added note (${n.pivot})${n.imgs.length?` with ${n.imgs.length} photo${n.imgs.length>1?"s":""}`:""}${text?`: ${text.slice(0,60)}${text.length>60?"…":""}`:""}`);
+  };
+}
+
 /* ---------- backup / restore ---------- */
 $("backupHead").onclick=()=>{
   const c=$("backupCard"); c.classList.toggle("collapsed");
   if(!c.classList.contains("collapsed") && !$("backupText").value.trim()) buildBackupText();
 };
 function buildBackupText(){
-  $("backupText").value = JSON.stringify({app:"pivotpump",v:2,pumps,pivots,passes,selIdx});
+  // note text/meta travels; photos live in the device image store and are not included
+  const notesNoBlobs = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[]}));
+  $("backupText").value = JSON.stringify({app:"pivotpump",v:3,pumps,pivots,passes,actlog,notes:notesNoBlobs,selIdx});
 }
 $("copyBackup").onclick=()=>{
   buildBackupText();
@@ -1109,13 +1214,18 @@ $("restoreBackup").onclick=()=>{
     $("backupMsg").textContent="⚠️ Backup is missing pumps or pivots."; return;
   }
   const np=Array.isArray(data.passes)?data.passes.length:0;
-  if(!confirm("Restore "+data.pivots.length+" pivots, "+data.pumps.length+" pumps and "+np+" logged passes? This replaces what's here now.")) return;
-  pumps=data.pumps; pivots=data.pivots; passes=Array.isArray(data.passes)?data.passes:[];
+  const nn=Array.isArray(data.notes)?data.notes.length:0;
+  const nl=Array.isArray(data.actlog)?data.actlog.length:0;
+  if(!confirm("Restore "+data.pivots.length+" pivots, "+data.pumps.length+" pumps, "+np+" passes, "+nn+" notes and "+nl+" log events? This replaces what's here now.")) return;
+  pumps=data.pumps; pivots=data.pivots;
+  passes=Array.isArray(data.passes)?data.passes:[];
+  notes=Array.isArray(data.notes)?data.notes:[];
+  if(Array.isArray(data.actlog)) actlog=data.actlog;
   selIdx=Number.isInteger(data.selIdx)&&data.selIdx<pivots.length?data.selIdx:0;
-  saveAll();
-  renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog();
-  logAction(`Restored backup — ${pivots.length} pivots, ${pumps.length} pumps, ${np} passes`);
-  $("backupMsg").textContent="✅ Restored "+pivots.length+" pivots, "+pumps.length+" pumps and "+np+" passes.";
+  saveAll(); saveLog();
+  renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog(); renderActivityLog(); renderNotes();
+  logAction(`Restored backup — ${pivots.length} pivots, ${pumps.length} pumps, ${np} passes, ${nn} notes`);
+  $("backupMsg").textContent="✅ Restored "+pivots.length+" pivots, "+pumps.length+" pumps, "+np+" passes, "+nn+" notes. (Photos stay on their original device.)";
 };
 
 /* recompute on any input */
@@ -1123,7 +1233,7 @@ document.querySelectorAll("input").forEach(el=>el.addEventListener("input",compu
 $("t_dir").addEventListener("change",computeAll);
 
 /* ---------- boot ---------- */
-renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog(); renderActivityLog();
+renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog(); renderActivityLog(); wireNotes(); renderNotes();
 </script>
 </body>
 </html>
