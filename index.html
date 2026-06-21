@@ -255,7 +255,7 @@
     <div class="row">
       <div>
         <label>Pump setting (%)</label>
-        <input id="s_setting" type="number" step="any" inputmode="decimal" value="50">
+        <input id="s_setting" type="number" step="any" inputmode="decimal">
       </div>
       <div>
         <label id="s_caplabel">Pump max capacity <span class="hint">(GPH @ 100%)</span></label>
@@ -596,14 +596,20 @@ function relabel(){
 }
 function applyPivotDefaults(){
   const p=pivots[selIdx], cap=pumpCap(p);
-  setIfAuto("s_tank",p.tank); $("s_deg").value=p.deg; setIfAuto("s_size",cap);
+  const pump = p.lastPump!=null ? p.lastPump : 50;
+  setIfAuto("s_tank",p.tank); $("s_deg").value=p.deg; setIfAuto("s_size",cap); setIfAuto("s_setting",pump);
   setIfAuto("p_tank",p.tank); $("p_deg").value=p.deg; setIfAuto("p_size",cap); setIfAuto("p_speed",p.defSpeed);
-  setIfAuto("t_total",p.deg); setIfAuto("t_size",cap); setIfAuto("t_speed",p.defSpeed);
+  setIfAuto("t_total",p.deg); setIfAuto("t_size",cap); setIfAuto("t_speed",p.defSpeed); setIfAuto("t_setting",p.lastPump!=null?p.lastPump:"");
   relabel(); computeAll();
 }
 function setIfAuto(id,val){ const el=$(id); if(el.value===""||el.dataset.auto==="1"){ el.value=val; el.dataset.auto="1"; } }
-["s_tank","p_tank","p_speed","s_size","p_size","t_total","t_size","t_speed"].forEach(id=>$(id).addEventListener("input",()=>{$(id).dataset.auto="0";}));
-function resetAuto(){ ["s_tank","p_tank","p_speed","s_size","p_size","t_total","t_size","t_speed","s_deg","p_deg"].forEach(id=>$(id).dataset.auto="1"); }
+["s_tank","p_tank","p_speed","s_size","p_size","t_total","t_size","t_speed","s_setting","t_setting"].forEach(id=>$(id).addEventListener("input",()=>{$(id).dataset.auto="0";}));
+function resetAuto(){ ["s_tank","p_tank","p_speed","s_size","p_size","t_total","t_size","t_speed","s_setting","t_setting","s_deg","p_deg"].forEach(id=>$(id).dataset.auto="1"); }
+// remember the last speed / pump entered, per pivot (persists + rides in backup)
+function rememberSpeed(){ const v=parseFloat(this.value); if(isFinite(v)){ pivots[selIdx].defSpeed=v; saveAll(); } }
+function rememberPump(){ const v=parseFloat(this.value); if(isFinite(v)){ pivots[selIdx].lastPump=v; saveAll(); } }
+["t_speed","p_speed"].forEach(id=>$(id).addEventListener("input",rememberSpeed));
+["t_setting","s_setting"].forEach(id=>$(id).addEventListener("input",rememberPump));
 
 /* ---------- pivot editor ---------- */
 let editingNew=false;
