@@ -1,0 +1,22 @@
+PivotPump — Activity Log (recovered from chat, sorted chronologically)
+Exported 2026-06-21
+
+2026-06-20T13:39:26.857Z  On-track East Young: 270°→10° ⟳ fwd, covered 100°, 260° to cover; 245/1,222 gal; pace 9.77 gal/°; ~235° short projected → pivot 114% timer
+2026-06-20T14:03:36.243Z  On-track East Young: 270°→10° ⟳ fwd, covered 100°, 260° to cover; 246/2,222 gal; pace 19.76 gal/°; ~248° short projected → pivot 229.7% timer
+2026-06-20T14:03:41.098Z  On-track East Young: 270°→10° ⟳ fwd, covered 100°, 260° to cover; 246/2,222 gal; pace 19.76 gal/°; ~248° short projected → pivot 229.7% timer / pump 2.4%
+2026-06-20T14:58:15.167Z  Pump "East Young pump" capacity 30 → 55 GPH
+2026-06-20T14:58:24.999Z  Pump "Spanjer pump" capacity 55 → 18 GPH
+2026-06-20T22:05:53.997Z  On-track East Young: 6°→276° ⟳ fwd, covered 270°, 90° to cover; 650/2,750 gal; pace 7.78 gal/°; on track → pivot 11.8% timer
+2026-06-20T22:05:58.840Z  On-track East Young: 6°→276° ⟳ fwd, covered 270°, 90° to cover; 650/2,750 gal; pace 7.78 gal/°; on track → pivot 11.8% timer / pump 65%
+2026-06-20T22:13:42.865Z  On-track West Young: 6°→276° ⟳ fwd, covered 270°, 90° to cover; 650/2,750 gal; pace 7.78 gal/°; on track → pivot 19.4% timer / pump 65%
+2026-06-20T22:13:57.542Z  Pump "West Young pump" capacity 18 → 30 GPH
+2026-06-20T22:14:19.523Z  On-track West Young: 6°→276° ⟳ fwd, covered 270°, 90° to cover; 650/1,600 gal; pace 3.52 gal/°; ~333 gal leftover projected → pivot 8.8% timer
+2026-06-20T22:14:26.010Z  On-track West Young: 6°→276° ⟳ fwd, covered 270°, 90° to cover; 0/1,600 gal; pace 5.93 gal/°; ~90° short projected → pump 0%
+2026-06-20T22:16:41.481Z  On-track West Young: 297°→296° ⟳ fwd, covered 359°, 1° to cover; 0/1,600 gal; pace 4.46 gal/°; on track → pump 0%
+2026-06-21T13:25:18.650Z  On-track East Young: 6°→351° ⟳ fwd, covered 345°, 15° to cover; 1/2,750 gal; pace 7.97 gal/°; ~15° short projected → pivot 1,314.7% timer
+2026-06-21T13:25:28.208Z  On-track East Young: 6°→351° ⟳ fwd, covered 345°, 15° to cover; 1/2,750 gal; pace 7.97 gal/°; ~15° short projected → pivot 1,494% timer
+2026-06-21T13:25:33.428Z  On-track East Young: 6°→351° ⟳ fwd, covered 345°, 15° to cover; 1/2,750 gal; pace 7.97 gal/°; ~15° short projected → pivot 1,494% timer / pump 0.6%
+2026-06-21T16:10:25.483Z  Started pass — East Young, 3,000 gal, 360°
+2026-06-21T16:11:46.521Z  Marked tank dry — East Young at 0°
+2026-06-21T16:12:51.388Z  On-track East Young: 6°→351° ⟳ fwd, covered 345°, 15° to cover; 0/2,750 gal; pace 7.97 gal/°; ~15° short projected → tank essentially empty; refill or accept shortfall
+2026-06-21T16:22:25.174Z  On-track East Young: 6°→351° ⟳ fwd, covered 345°, 15° to cover; 0/2,750 gal; pace 7.97 gal/°; ~15° short projected → tank essentially empty; refill or accept shortfall

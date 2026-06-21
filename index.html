@@ -229,6 +229,31 @@
     </div>
   </div>
 
+  <!-- CLOUD SYNC -->
+  <div class="card collapsed" id="syncCard">
+    <div class="secthead" id="syncHead">
+      <h2 style="margin:0">☁️ Cloud sync</h2>
+      <span class="pill" id="syncPill">off</span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="body">
+      <p class="muted" style="margin-top:10px">Sign in to automatically sync your pumps, pivots, passes &amp; activity log across your phone and computer. Works offline and syncs when you have signal. (Photos stay on each device.)</p>
+      <div id="syncSignedOut">
+        <div class="row"><div><label>Email</label><input id="sync_email" type="email" autocomplete="username"></div></div>
+        <div class="row"><div><label>Password</label><input id="sync_pw" type="password" autocomplete="current-password"></div></div>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+          <button class="sm" id="syncSignIn">Sign in</button>
+          <button class="ghost sm" id="syncCreate">Create account</button>
+        </div>
+      </div>
+      <div id="syncSignedIn" style="display:none">
+        <p class="muted" style="margin-top:8px">Signed in as <b id="syncEmail"></b></p>
+        <button class="ghost sm" id="syncSignOut">Sign out</button>
+      </div>
+      <div id="syncStatus" class="muted" style="margin-top:10px"></div>
+    </div>
+  </div>
+
   <!-- MODE TABS -->
   <div class="tabs">
     <button data-mode="speed" class="active">Find pivot speed</button>
@@ -467,7 +492,37 @@ let pumps, pivots, selIdx, passes, actlog, notes, draft;
   try{ const dd=JSON.parse(localStorage.getItem(K_DRAFT)); draft=(dd&&typeof dd==="object")?dd:{text:"",imgs:[]}; }catch(e){ draft={text:"",imgs:[]}; }
 })();
 function saveDraft(){ try{ localStorage.setItem(K_DRAFT,JSON.stringify(draft)); }catch(e){} }
-function saveLog(){ try{ localStorage.setItem(K_LOG,JSON.stringify(actlog)); }catch(e){} }
+function saveLog(){ try{ localStorage.setItem(K_LOG,JSON.stringify(actlog)); }catch(e){} cloudMaybePush(); }
+// ---- cloud sync bridge (talks to the Firebase module below) ----
+function syncPayload(){
+  const notesMeta = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[]}));
+  return JSON.stringify({app:"pivotpump",v:3,pumps,pivots,passes,actlog,notes:notesMeta,selIdx});
+}
+function cloudMaybePush(){ if(window.PP_cloudPush) try{ window.PP_cloudPush(syncPayload()); }catch(e){} }
+function applyRemote(str){
+  let data; try{ data=JSON.parse(str); }catch(e){ return; }
+  if(!data||!Array.isArray(data.pumps)||!Array.isArray(data.pivots)||!data.pumps.length||!data.pivots.length) return;
+  try{ localStorage.setItem("pivotpump.presync.backup", syncPayload()); }catch(e){}   // safety stash
+  pumps=data.pumps; pivots=data.pivots;
+  passes=Array.isArray(data.passes)?data.passes:[];
+  if(Array.isArray(data.actlog)) actlog=data.actlog;
+  notes=Array.isArray(data.notes)?data.notes:[];
+  selIdx=Number.isInteger(data.selIdx)&&data.selIdx<pivots.length?data.selIdx:0;
+  saveAll(); saveLog();
+  renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog(); renderActivityLog(); renderNotes();
+}
+window.PP_getLocalPayload=()=>syncPayload();
+window.PP_applyRemote=applyRemote;
+function ppFriendly(c){ c=String(c||"");
+  if(c.includes("invalid-credential")||c.includes("wrong-password")||c.includes("user-not-found")) return "wrong email or password";
+  if(c.includes("email-already-in-use")) return "that email already has an account — use Sign in";
+  if(c.includes("weak-password")) return "password too short (use 6+ characters)";
+  if(c.includes("invalid-email")) return "that isn't a valid email";
+  if(c.includes("network")) return "no internet connection";
+  return c; }
+window.PP_setSignedIn=(email)=>{ const a=$("syncSignedOut"),b=$("syncSignedIn"); if(a)a.style.display="none"; if(b)b.style.display="block"; if($("syncEmail"))$("syncEmail").textContent=email||""; if($("syncPill"))$("syncPill").textContent="on"; };
+window.PP_setSignedOut=()=>{ const a=$("syncSignedOut"),b=$("syncSignedIn"); if(b)b.style.display="none"; if(a)a.style.display="block"; if($("syncPill"))$("syncPill").textContent="off"; };
+window.PP_setSyncStatus=(s)=>{ if($("syncStatus")) $("syncStatus").textContent=s||""; };
 function logAction(msg){
   actlog.push({t:Date.now(),msg});
   if(actlog.length>1000) actlog=actlog.slice(-1000);
@@ -479,7 +534,7 @@ function saveAll(){ try{
   localStorage.setItem(K_PASSES,JSON.stringify(passes));
   localStorage.setItem(K_NOTES,JSON.stringify(notes));
   localStorage.setItem(K_SEL,String(selIdx));
-}catch(e){} }
+}catch(e){} cloudMaybePush(); }
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -1146,6 +1201,22 @@ function renderCalibration(){
 $("histHead").onclick=()=>$("histCard").classList.toggle("collapsed");
 $("calHead").onclick=()=>$("calCard").classList.toggle("collapsed");
 
+/* ---------- cloud sync UI wiring ---------- */
+$("syncHead").onclick=()=>$("syncCard").classList.toggle("collapsed");
+$("syncSignIn").onclick=async()=>{
+  if(!window.PP_authSignIn){ $("syncStatus").textContent="Sync still loading — try again in a moment."; return; }
+  $("syncStatus").textContent="Signing in…";
+  const r=await window.PP_authSignIn($("sync_email").value.trim(),$("sync_pw").value,false);
+  if(!r.ok) $("syncStatus").textContent="Sign-in failed: "+ppFriendly(r.msg);
+};
+$("syncCreate").onclick=async()=>{
+  if(!window.PP_authSignIn){ $("syncStatus").textContent="Sync still loading — try again in a moment."; return; }
+  $("syncStatus").textContent="Creating account…";
+  const r=await window.PP_authSignIn($("sync_email").value.trim(),$("sync_pw").value,true);
+  if(!r.ok) $("syncStatus").textContent="Couldn't create account: "+ppFriendly(r.msg);
+};
+$("syncSignOut").onclick=()=>{ if(window.PP_authSignOut) window.PP_authSignOut(); };
+
 /* ---------- activity log ---------- */
 function renderActivityLog(){
   if(!$("actList")) return;
@@ -1279,6 +1350,77 @@ $("t_dir").addEventListener("change",computeAll);
 
 /* ---------- boot ---------- */
 renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog(); renderActivityLog(); wireNotes(); renderNotes();
+</script>
+
+<!-- ===================== FIREBASE CLOUD SYNC ===================== -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, onSnapshot, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD-76VykMSh5-RCCh9ty7d-kwAMKntgj1U",
+  authDomain: "pivotpump.firebaseapp.com",
+  projectId: "pivotpump",
+  storageBucket: "pivotpump.firebasestorage.app",
+  messagingSenderId: "247558940764",
+  appId: "1:247558940764:web:08461fc973da611eec1e99"
+};
+
+const setStatus = s => window.PP_setSyncStatus && window.PP_setSyncStatus(s);
+let auth, db, userDocRef=null, unsub=null, lastSynced="", pushTimer=null;
+
+try{
+  const app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  try{ await setPersistence(auth, browserLocalPersistence); }catch(e){}
+  try{ db = initializeFirestore(app, {localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})}); }
+  catch(e){ db = initializeFirestore(app, {}); }
+
+  onAuthStateChanged(auth, (user)=>{
+    if(unsub){ unsub(); unsub=null; }
+    lastSynced="";
+    if(!user){ window.PP_setSignedOut && window.PP_setSignedOut(); setStatus("Not signed in — data is on this device only."); return; }
+    window.PP_setSignedIn && window.PP_setSignedIn(user.email);
+    setStatus("Connecting…");
+    userDocRef = doc(db, "users", user.uid);
+    unsub = onSnapshot(userDocRef, (snap)=>{
+      if(!snap.exists()){
+        const payload = window.PP_getLocalPayload ? window.PP_getLocalPayload() : "";
+        if(payload && payload.length>40){ lastSynced=payload; setDoc(userDocRef,{data:payload,updated:serverTimestamp()}); setStatus("Synced ✓ (seeded from this device)"); }
+        else setStatus("Synced ✓ (nothing yet)");
+        return;
+      }
+      const data = snap.data().data;
+      if(typeof data==="string" && data && data!==lastSynced){
+        lastSynced = data;
+        window.PP_applyRemote && window.PP_applyRemote(data);
+      }
+      setStatus("Synced ✓" + (snap.metadata.fromCache ? " (offline)" : ""));
+    }, (err)=> setStatus("Sync error: " + (err.code||err.message)));
+  });
+
+  window.PP_cloudPush = (payload)=>{
+    if(!auth || !auth.currentUser || !userDocRef) return;
+    if(payload === lastSynced) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(async ()=>{
+      try{ lastSynced = payload; await setDoc(userDocRef, {data:payload, updated:serverTimestamp()}); setStatus("Synced ✓"); }
+      catch(e){ setStatus("Saved locally — will sync when online"); }
+    }, 1200);
+  };
+  window.PP_authSignIn = async (email, pw, create)=>{
+    try{
+      if(create) await createUserWithEmailAndPassword(auth, email, pw);
+      else await signInWithEmailAndPassword(auth, email, pw);
+      return {ok:true};
+    }catch(e){ return {ok:false, msg:e.code||e.message}; }
+  };
+  window.PP_authSignOut = ()=> signOut(auth);
+}catch(e){
+  console.warn("Firebase unavailable:", e);
+  setStatus("Cloud sync unavailable on this device — local only.");
+}
 </script>
 </body>
 </html>
