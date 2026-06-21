@@ -769,18 +769,22 @@ function computeTrack(){
   const newPivot = isFinite(curPivot)&&curPivot>0 ? (isTimer(p)? curPivot/factor : curPivot*factor) : NaN;
   const pivStr = v => isTimer(p)? fmt(v,1)+"% timer" : fmt(v,2)+'" depth';
 
+  // a recommendation is only meaningful if there's still fertilizer to meter and the
+  // setting is within the equipment's limits (timer ≤100%, pump ≤100%, depth sane)
+  const essentiallyEmpty = cur <= Math.max(orig*0.01, 2);
+  const pivotOK = isFinite(newPivot) && newPivot>0 && (isTimer(p)? newPivot<=100 : newPivot<=2);
+  const pumpOK  = isFinite(newPump) && newPump>0.1 && newPump<=100;
+  function recParts(){
+    const a=[];
+    if(pivotOK) a.push({plain:`pivot ${isTimer(p)?fmt(newPivot,1)+"%":fmt(newPivot,2)+'"'}`, html:`set the pivot to <b>${pivStr(newPivot)}</b>`});
+    if(pumpOK)  a.push({plain:`pump ${fmt(newPump,1)}%`, html:`set the pump to <b>${fmt(newPump,1)}%</b>`});
+    return a;
+  }
   function options(){
-    const opts=[];
-    if(isFinite(newPivot)){
-      if(isTimer(p)&&newPivot>100) opts.push(`speed the pivot past 100% (not possible — use the pump instead)`);
-      else opts.push(`set the pivot to <b>${pivStr(newPivot)}</b>`);
-    }
-    if(isFinite(newPump)){
-      if(newPump>100) opts.push(`set the pump to <b>${fmt(newPump,0)}%</b> (over its 100% max — not possible)`);
-      else opts.push(`set the pump to <b>${fmt(newPump,1)}%</b>`);
-    }
-    if(!opts.length) opts.push(`enter your current pivot &amp; pump settings above and I'll give the new numbers`);
-    return `<div class="fix">To finish empty right at the end: ${opts.join(" &nbsp;—or—&nbsp; ")}.</div>`;
+    if(essentiallyEmpty) return `<div class="fix">The tank is essentially empty — no pump or speed change will finish this pass. Refill, or accept the shortfall.</div>`;
+    const a=recParts();
+    if(!a.length) return `<div class="fix">No pump or speed setting can fix this from here without exceeding the equipment's limits (you'd need the pivot past 100% or the pump over 100%).</div>`;
+    return `<div class="fix">To finish empty right at the end: ${a.map(x=>x.html).join(" &nbsp;—or—&nbsp; ")}.</div>`;
   }
 
   let cls,head,fix;
@@ -813,11 +817,13 @@ function computeTrack(){
       </div>
     </div>`;
 
-  // assemble a one-line record for the activity log
+  // assemble a one-line record for the activity log — same guarded advice as on screen
   const endTxt = Math.abs(end)<=tol ? "on track" : (end>0?`~${fmt(end,0)} gal leftover projected`:`~${fmt(Math.max(remain-reachDeg,0),0)}° short projected`);
   let rec="";
-  if(isFinite(newPivot)) rec+=` → pivot ${pivStr(newPivot)}`;
-  if(isFinite(newPump)&&newPump<=100) rec+=`${rec?" /":" →"} pump ${fmt(newPump,1)}%`;
+  if(Math.abs(end)>tol){
+    if(essentiallyEmpty) rec=" → tank essentially empty; refill or accept shortfall";
+    else { const a=recParts(); rec = a.length? " → "+a.map(x=>x.plain).join(" / ") : " → no setting can fix from here (would exceed limits)"; }
+  }
   lastTrack={msg:`On-track ${p.name}: ${fmt(begin,0)}°→${fmt(current,0)}° ${dsym}, covered ${fmt(covered,0)}°, ${fmt(remain,0)}° to cover; ${fmt(cur,0)}/${fmt(orig,0)} gal; pace ${fmt(galPerDeg,2)} gal/°; ${endTxt}${rec}`};
 
   // auto-save to the audit trail once the numbers settle (deduped) — no button to forget
