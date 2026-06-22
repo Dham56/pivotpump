@@ -17,6 +17,11 @@
     background:var(--bg);color:var(--text);line-height:1.4;-webkit-text-size-adjust:100%}
   header{background:var(--green);color:#fff;padding:14px 16px;position:sticky;top:0;z-index:10;
     box-shadow:0 2px 6px rgba(0,0,0,.15)}
+  header{position:sticky}
+  .helpbtn{position:absolute;top:12px;right:14px;background:#fff;color:var(--green-dk);border:none;
+    border-radius:9px;padding:8px 12px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--green-dk);color:#fff;
+    padding:12px 16px;border-radius:10px;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.35);z-index:200;max-width:90%;text-align:center}
   header h1{margin:0;font-size:19px;letter-spacing:.3px}
   header .sub{font-size:12px;opacity:.85;margin-top:2px}
   .wrap{max-width:680px;margin:0 auto;padding:14px}
@@ -109,6 +114,7 @@
 <header>
   <h1>🌾 PivotPump</h1>
   <div class="sub">Fertigation calculator — match pump rate to pivot speed</div>
+  <button class="helpbtn" id="helpBtn">🆘 Get help</button>
 </header>
 
 <div class="wrap">
@@ -1217,6 +1223,37 @@ $("syncCreate").onclick=async()=>{
   if(!r.ok) $("syncStatus").textContent="Couldn't create account: "+ppFriendly(r.msg);
 };
 $("syncSignOut").onclick=()=>{ if(window.PP_authSignOut) window.PP_authSignOut(); };
+/* ---------- Get help button ---------- */
+function showToast(msg){
+  const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),5000);
+}
+function buildHelpBundle(){
+  const p=pivots[selIdx], pu=pumps[p.pump]||{};
+  const sync=($("syncPill")?$("syncPill").textContent:"?")+" "+($("syncStatus")?$("syncStatus").textContent:"");
+  const recent=[...actlog].slice(-15).map(e=>new Date(e.t).toLocaleString()+"  "+e.msg).join("\n");
+  return `PivotPump — help request
+(Replace this line with your question or what's going wrong.)
+
+--- context (auto-attached so Claude has the full picture) ---
+Selected pivot: ${p.name} | ${p.mode} | cal ${p.cal} | ${p.deg}° | pump "${pu.name}" cap ${pu.cap} GPH | tank ${p.tank} | gpm ${p.gpm} | acres ${p.acres}
+Pumps: ${pumps.map(x=>x.name+" "+x.cap).join(", ")}
+Cloud sync: ${sync}
+Passes: ${passes.length} | Notes: ${notes.length} | Activity events: ${actlog.length}
+
+Recent activity:
+${recent||"(none)"}
+
+Full setup (for restore/debug):
+${syncPayload()}`;
+}
+$("helpBtn").onclick=()=>{
+  const text=buildHelpBundle();
+  const ok=()=>showToast("✓ Copied your PivotPump details — paste them into Claude and describe your issue.");
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok,()=>fallbackCopy(text,ok)); else fallbackCopy(text,ok);
+  window.open("https://claude.ai/new","_blank");
+};
+
 $("syncReset").onclick=async()=>{
   const email=$("sync_email").value.trim();
   if(!email){ $("syncStatus").textContent="Type your email above first, then tap Forgot password."; return; }
