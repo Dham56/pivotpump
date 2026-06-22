@@ -447,7 +447,8 @@
     <textarea id="noteText" rows="3" placeholder="Type a note…"></textarea>
     <div class="thumbs" id="noteThumbs"></div>
     <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
-      <label class="photobtn">📷 Add photo<input id="notePhoto" type="file" accept="image/*" multiple style="display:none"></label>
+      <label class="photobtn">📷 Camera<input id="notePhotoCam" type="file" accept="image/*" capture="environment" multiple style="display:none"></label>
+      <label class="photobtn">🖼️ Gallery<input id="notePhotoGal" type="file" accept="image/*" multiple style="display:none"></label>
       <button class="sm" id="saveNoteBtn">Save note</button>
       <span class="muted" id="noteMsg"></span>
     </div>
@@ -1362,7 +1363,8 @@ function renderTanks(){
     <div class="tankrow">
       <input class="tnm" type="text" value="${escapeHtml(t.name||"")}" placeholder="Tank name" data-i="${i}">
       <div class="tkthumb">${t.photoId?`<img data-img="${t.photoId}" alt="">`:`<span class="muted" style="font-size:11px">no photo</span>`}</div>
-      <label class="photobtn" style="font-size:12px;padding:7px 9px">📷<input type="file" accept="image/*" data-tank="${i}" style="display:none"></label>
+      <label class="photobtn" style="font-size:13px;padding:7px 8px" title="Take photo">📷<input type="file" accept="image/*" capture="environment" data-tank="${i}" style="display:none"></label>
+      <label class="photobtn" style="font-size:13px;padding:7px 8px" title="From gallery">🖼️<input type="file" accept="image/*" data-tank="${i}" style="display:none"></label>
       <button class="danger tiny" data-deltank="${i}">✕</button>
     </div>`).join("");
   host.querySelectorAll("img[data-img]").forEach(im=>{ loadThumb(im,im.dataset.img); im.onclick=()=>openLightbox(im.dataset.img); });
@@ -1421,13 +1423,15 @@ function renderNotes(){
 }
 function wireNotes(){
   $("noteText").addEventListener("input",e=>{ draft.text=e.target.value; saveDraft(); });
-  $("notePhoto").addEventListener("change",async e=>{
+  const onNotePhoto=async e=>{
     const files=[...e.target.files]; e.target.value=""; $("noteMsg").textContent="Adding photo…";
     for(const f of files){
       try{ const d=await resizeImage(f); const id=uid(); await idbPut(id,d); draft.imgs.push(id); saveDraft(); renderDraftThumbs(); $("noteMsg").textContent=""; }
       catch(err){ $("noteMsg").textContent="Couldn't read one image (try a JPG/PNG)."; }
     }
-  });
+  };
+  $("notePhotoCam").addEventListener("change",onNotePhoto);
+  $("notePhotoGal").addEventListener("change",onNotePhoto);
   $("saveNoteBtn").onclick=()=>{
     const text=(draft.text||"").trim();
     if(!text && !draft.imgs.length){ $("noteMsg").textContent="Type a note or add a photo first."; return; }
