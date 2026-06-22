@@ -439,6 +439,7 @@
     <div id="tanksList"></div>
     <div style="display:flex;gap:10px;margin-top:8px;align-items:center;flex-wrap:wrap">
       <button class="ghost sm" id="addTankBtn">+ Add tank</button>
+      <button class="ghost sm" id="tanksFromPivots">Add a tank for each pivot</button>
       <span class="muted" id="tankMsg"></span>
     </div>
     <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
@@ -1228,6 +1229,13 @@ $("calHead").onclick=()=>$("calCard").classList.toggle("collapsed");
 /* ---------- cloud sync UI wiring ---------- */
 $("syncHead").onclick=()=>$("syncCard").classList.toggle("collapsed");
 $("addTankBtn").onclick=()=>{ tanks.push({id:"tk"+Math.random().toString(36).slice(2,8),name:"New tank",photoId:null,updated:null}); saveAll(); renderTanks(); };
+$("tanksFromPivots").onclick=()=>{
+  const have=new Set(tanks.map(t=>(t.name||"").trim()));
+  let added=0;
+  pivots.forEach(p=>{ if(!have.has(p.name)){ tanks.push({id:"tk"+Math.random().toString(36).slice(2,8),name:p.name,photoId:null,updated:null}); added++; } });
+  if(added){ saveAll(); renderTanks(); }
+  if($("tankMsg")) $("tankMsg").textContent = added ? `Added ${added} tank(s) for pivots that didn't have one.` : "Every pivot already has a tank.";
+};
 $("syncSignIn").onclick=async()=>{
   if(!window.PP_authSignIn){ $("syncStatus").textContent="Sync still loading — try again in a moment."; return; }
   $("syncStatus").textContent="Signing in…";
