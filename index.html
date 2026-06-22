@@ -1224,6 +1224,29 @@ $("syncCreate").onclick=async()=>{
 };
 $("syncSignOut").onclick=()=>{ if(window.PP_authSignOut) window.PP_authSignOut(); };
 /* ---------- Get help button ---------- */
+// project briefing baked in so a fresh Claude chat understands the whole app (snapshot; kept updated with changes)
+const PP_BRIEFING = `PivotPump is a single-file web app (index.html, hosted at dham56.github.io/pivotpump, repo Dham56/pivotpump) that matches fertilizer-pump output to center-pivot speed for fertigation. Built from the user's HJV pivot spreadsheet for Doug Ham's operation.
+
+MODEL:
+- Pump: injection rate (GPH) = pump max capacity x setting% / 100. Settings are a percent of total capacity. Pumps are a shared library assigned to pivots and can be swapped.
+- Pivot speed->time, two conventions per pivot. Timer pivots: cal = hours for a full 360deg pass at 100% timer; pass time = cal*100/timer% * deg/360. Depth pivots: cal = hours to apply 1 inch over 360deg; pass time = cal*inches * deg/360. East/West Young are timer; Switzer/Spanjer/HBF are depth.
+- "Finished properly" = tank empties exactly as the pass completes. Precip uses actual pass hours; an acre-foot = 325,851 gal.
+
+ON-TRACK CHECK (observation-based, ignores doubtful dial values): inputs are starting gal, current gal, total degrees, beginning+current position and direction (forward=clockwise). Degrees covered = angular travel in that direction. Compares actual gal/deg pace to the pace needed; recommends a new pivot setting and/or pump % by scaling the CURRENT dial by the factor, so calibration error cancels. Guards near-empty and over-100% cases. Also derives actual GPH and deg/hr between two logged checks (flags pivot stopped/idle/refill). Auto-saves a snapshot to the activity log.
+
+FEATURES: Find pivot speed, Find pump setting, On-track check, Log & history (log position+gallons -> application profile, dry-wedge detection, Christiansen uniformity, season totals, CSV), Notes & photos (photos in IndexedDB, device-only), Activity log (automatic audit trail), Backup/Restore, and Firebase cloud sync (email/password, local-first, syncs phone<->Mac, offline-capable).
+
+CALIBRATIONS (East Young confirmed against AgSense telemetry: ~9.7-9.9 hr@100% and ~425 GPM):
+- East Young: timer, cal 9.72 hr@100%, 360deg, pump ~55 GPH, tank 3000, 425 GPM, 122 ac.
+- West Young: timer, cal 14.88, 360deg, pump 30 GPH, tank 3000, 500 GPM, 121.4 ac.
+- Switzer: depth, cal 101 hr/inch, 338deg, pump 36, tank 1450, 550 GPM, 117 ac.
+- Spanjer: depth, cal 107.93, 360deg, pump 18, tank 1450, 550 GPM, 117.6 ac.
+- HBF: depth, cal 76.52, 360deg, pump 55, tank 1450, 750 GPM, 126.9 ac.
+
+MAKE-UP WEDGE: if the tank runs dry before the pass finishes, the missed wedge (degrees that got water only) should get ~double the normal rate on the next pass to even out the application (its own share plus the share it missed).
+
+USER PREFERENCE: wants complete AUTOMATIC logging; never rely on a manual save tap (used in the field with sun glare).`;
+
 function showToast(msg){
   const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
   document.body.appendChild(t); setTimeout(()=>t.remove(),5000);
@@ -1245,7 +1268,10 @@ Recent activity:
 ${recent||"(none)"}
 
 Full setup (for restore/debug):
-${syncPayload()}`;
+${syncPayload()}
+
+--- project background (so a fresh Claude knows the app) ---
+${PP_BRIEFING}`;
 }
 $("helpBtn").onclick=()=>{
   const text=buildHelpBundle();
