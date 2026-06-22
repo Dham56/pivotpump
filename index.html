@@ -245,6 +245,7 @@
           <button class="sm" id="syncSignIn">Sign in</button>
           <button class="ghost sm" id="syncCreate">Create account</button>
         </div>
+        <div style="margin-top:10px"><span id="syncReset" style="color:var(--green-dk);text-decoration:underline;cursor:pointer;font-size:13px">Forgot password?</span></div>
       </div>
       <div id="syncSignedIn" style="display:none">
         <p class="muted" style="margin-top:8px">Signed in as <b id="syncEmail"></b></p>
@@ -1216,6 +1217,14 @@ $("syncCreate").onclick=async()=>{
   if(!r.ok) $("syncStatus").textContent="Couldn't create account: "+ppFriendly(r.msg);
 };
 $("syncSignOut").onclick=()=>{ if(window.PP_authSignOut) window.PP_authSignOut(); };
+$("syncReset").onclick=async()=>{
+  const email=$("sync_email").value.trim();
+  if(!email){ $("syncStatus").textContent="Type your email above first, then tap Forgot password."; return; }
+  if(!window.PP_authReset){ $("syncStatus").textContent="Sync still loading — try again in a moment."; return; }
+  $("syncStatus").textContent="Sending reset link…";
+  const r=await window.PP_authReset(email);
+  $("syncStatus").textContent = r.ok ? ("✅ Reset link sent to "+email+" — check your email (and spam).") : ("Couldn't send reset: "+ppFriendly(r.msg));
+};
 
 /* ---------- activity log ---------- */
 function renderActivityLog(){
@@ -1355,7 +1364,7 @@ renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); render
 <!-- ===================== FIREBASE CLOUD SYNC ===================== -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, onSnapshot, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -1417,6 +1426,10 @@ try{
     }catch(e){ return {ok:false, msg:e.code||e.message}; }
   };
   window.PP_authSignOut = ()=> signOut(auth);
+  window.PP_authReset = async (email)=>{
+    try{ await sendPasswordResetEmail(auth, email); return {ok:true}; }
+    catch(e){ return {ok:false, msg:e.code||e.message}; }
+  };
 }catch(e){
   console.warn("Firebase unavailable:", e);
   setStatus("Cloud sync unavailable on this device — local only.");
