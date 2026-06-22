@@ -105,6 +105,10 @@
   .noteitem .ntext{white-space:pre-wrap;margin-top:4px;font-size:14px}
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:100;padding:18px}
   .lightbox img{max-width:100%;max-height:100%;border-radius:8px}
+  .tankrow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .tankrow .tnm{flex:1;padding:9px 10px}
+  .tankrow .tkthumb{flex:0 0 auto;width:56px;height:56px;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#eef2ef}
+  .tankrow .tkthumb img{width:56px;height:56px;object-fit:cover;cursor:pointer;display:block}
   .secthead{display:flex;align-items:center;gap:8px;cursor:pointer}
   .secthead .chev{margin-left:auto;color:var(--muted);transition:transform .15s}
   .collapsed .chev{transform:rotate(-90deg)}
@@ -430,8 +434,16 @@
 
   <!-- MODE: NOTES -->
   <div class="card mode" data-mode="notes" hidden>
-    <h2>Notes &amp; photos</h2>
-    <p class="muted">Jot anything — field conditions, problems, reminders — and attach photos. Each note is timestamped and tagged with the current pivot. Saved on this device; note text travels in Backup, photos stay on this device.</p>
+    <h2>🛢️ Tank photos</h2>
+    <p class="muted">A rolling photo of each tank's running notes — snap a fresh one when you add writing and it replaces the old one. Compressed and synced to all your signed-in devices.</p>
+    <div id="tanksList"></div>
+    <div style="display:flex;gap:10px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      <button class="ghost sm" id="addTankBtn">+ Add tank</button>
+      <span class="muted" id="tankMsg"></span>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
+    <h2>📝 Notes</h2>
+    <p class="muted">Jot anything — field conditions, problems, reminders — and attach photos. Each note is timestamped and tagged with the current pivot. Note text syncs; note photos stay on this device.</p>
     <textarea id="noteText" rows="3" placeholder="Type a note…"></textarea>
     <div class="thumbs" id="noteThumbs"></div>
     <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
@@ -469,10 +481,10 @@ const SEED_PIVOTS = [
   {name:"East Young", mode:"timer", cal:9.72,   deg:360, pump:3, tank:3000, gpm:425, acres:122,   defSpeed:11},
   {name:"West Young", mode:"timer", cal:14.88,  deg:360, pump:4, tank:3000, gpm:500, acres:121.4, defSpeed:18},
 ];
-const K_PUMPS="pivotpump.pumps.v1", K_PIVOTS="pivotpump.pivots.v3", K_SEL="pivotpump.selected.v3", K_OLD="pivotpump.pivots.v2", K_PASSES="pivotpump.passes.v1", K_LOG="pivotpump.activity.v1", K_NOTES="pivotpump.notes.v1", K_DRAFT="pivotpump.notedraft.v1";
+const K_PUMPS="pivotpump.pumps.v1", K_PIVOTS="pivotpump.pivots.v3", K_SEL="pivotpump.selected.v3", K_OLD="pivotpump.pivots.v2", K_PASSES="pivotpump.passes.v1", K_LOG="pivotpump.activity.v1", K_NOTES="pivotpump.notes.v1", K_DRAFT="pivotpump.notedraft.v1", K_TANKS="pivotpump.tanks.v1";
 
 /* ---------- load with migration from the old per-pivot-size format ---------- */
-let pumps, pivots, selIdx, passes, actlog, notes, draft;
+let pumps, pivots, selIdx, passes, actlog, notes, draft, tanks;
 (function load(){
   let sp=null, sv=null;
   try{ sp=JSON.parse(localStorage.getItem(K_PUMPS)); }catch(e){}
@@ -497,13 +509,15 @@ let pumps, pivots, selIdx, passes, actlog, notes, draft;
   try{ const lg=JSON.parse(localStorage.getItem(K_LOG)); actlog=Array.isArray(lg)?lg:[]; }catch(e){ actlog=[]; }
   try{ const nn=JSON.parse(localStorage.getItem(K_NOTES)); notes=Array.isArray(nn)?nn:[]; }catch(e){ notes=[]; }
   try{ const dd=JSON.parse(localStorage.getItem(K_DRAFT)); draft=(dd&&typeof dd==="object")?dd:{text:"",imgs:[]}; }catch(e){ draft={text:"",imgs:[]}; }
+  try{ const tk=JSON.parse(localStorage.getItem(K_TANKS)); tanks=Array.isArray(tk)?tk:null; }catch(e){ tanks=null; }
+  if(!tanks){ tanks=(pivots||[]).map(p=>({id:"tk"+Math.random().toString(36).slice(2,8),name:p.name,photoId:null,updated:null})); }
 })();
 function saveDraft(){ try{ localStorage.setItem(K_DRAFT,JSON.stringify(draft)); }catch(e){} }
 function saveLog(){ try{ localStorage.setItem(K_LOG,JSON.stringify(actlog)); }catch(e){} cloudMaybePush(); }
 // ---- cloud sync bridge (talks to the Firebase module below) ----
 function syncPayload(){
   const notesMeta = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[]}));
-  return JSON.stringify({app:"pivotpump",v:3,pumps,pivots,passes,actlog,notes:notesMeta,selIdx});
+  return JSON.stringify({app:"pivotpump",v:4,pumps,pivots,passes,actlog,notes:notesMeta,tanks,selIdx});
 }
 function cloudMaybePush(){ if(window.PP_cloudPush) try{ window.PP_cloudPush(syncPayload()); }catch(e){} }
 function applyRemote(str){
@@ -514,9 +528,10 @@ function applyRemote(str){
   passes=Array.isArray(data.passes)?data.passes:[];
   if(Array.isArray(data.actlog)) actlog=data.actlog;
   notes=Array.isArray(data.notes)?data.notes:[];
+  if(Array.isArray(data.tanks)) tanks=data.tanks;
   selIdx=Number.isInteger(data.selIdx)&&data.selIdx<pivots.length?data.selIdx:0;
   saveAll(); saveLog();
-  renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog(); renderActivityLog(); renderNotes();
+  renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog(); renderActivityLog(); renderNotes(); renderTanks();
 }
 window.PP_getLocalPayload=()=>syncPayload();
 window.PP_applyRemote=applyRemote;
@@ -540,6 +555,7 @@ function saveAll(){ try{
   localStorage.setItem(K_PIVOTS,JSON.stringify(pivots));
   localStorage.setItem(K_PASSES,JSON.stringify(passes));
   localStorage.setItem(K_NOTES,JSON.stringify(notes));
+  localStorage.setItem(K_TANKS,JSON.stringify(tanks));
   localStorage.setItem(K_SEL,String(selIdx));
 }catch(e){} cloudMaybePush(); }
 
@@ -734,7 +750,7 @@ document.querySelectorAll(".tabs button").forEach(btn=>{
     const m=btn.dataset.mode;
     document.querySelectorAll(".card.mode").forEach(c=>c.hidden=c.dataset.mode!==m);
     if(m==="log") renderLog();
-    if(m==="notes") renderNotes();
+    if(m==="notes"){ renderNotes(); renderTanks(); }
   };
 });
 
@@ -1210,6 +1226,7 @@ $("calHead").onclick=()=>$("calCard").classList.toggle("collapsed");
 
 /* ---------- cloud sync UI wiring ---------- */
 $("syncHead").onclick=()=>$("syncCard").classList.toggle("collapsed");
+$("addTankBtn").onclick=()=>{ tanks.push({id:"tk"+Math.random().toString(36).slice(2,8),name:"New tank",photoId:null,updated:null}); saveAll(); renderTanks(); };
 $("syncSignIn").onclick=async()=>{
   if(!window.PP_authSignIn){ $("syncStatus").textContent="Sync still loading — try again in a moment."; return; }
   $("syncStatus").textContent="Signing in…";
@@ -1234,7 +1251,7 @@ MODEL:
 
 ON-TRACK CHECK (observation-based, ignores doubtful dial values): inputs are starting gal, current gal, total degrees, beginning+current position and direction (forward=clockwise). Degrees covered = angular travel in that direction. Compares actual gal/deg pace to the pace needed; recommends a new pivot setting and/or pump % by scaling the CURRENT dial by the factor, so calibration error cancels. Guards near-empty and over-100% cases. Also derives actual GPH and deg/hr between two logged checks (flags pivot stopped/idle/refill). Auto-saves a snapshot to the activity log.
 
-FEATURES: Find pivot speed, Find pump setting, On-track check, Log & history (log position+gallons -> application profile, dry-wedge detection, Christiansen uniformity, season totals, CSV), Notes & photos (photos in IndexedDB, device-only), Activity log (automatic audit trail), Backup/Restore, and Firebase cloud sync (email/password, local-first, syncs phone<->Mac, offline-capable).
+FEATURES: Find pivot speed, Find pump setting, On-track check, Log & history (log position+gallons -> application profile, dry-wedge detection, Christiansen uniformity, season totals, CSV), Notes & photos (free-form note photos are device-only), Tank photos (5 tanks, one rolling latest photo each that replaces the prior one; compressed and cloud-synced), Activity log (automatic audit trail), Backup/Restore, and Firebase cloud sync (email/password, local-first, syncs phone<->Mac, offline-capable; per-image compressed photos stored as Firestore docs under users/{uid}/images).
 
 CALIBRATIONS (East Young confirmed against AgSense telemetry: ~9.7-9.9 hr@100% and ~425 GPM):
 - East Young: timer, cal 9.72 hr@100%, 360deg, pump ~55 GPH, tank 3000, 425 GPM, 122 ac.
@@ -1327,8 +1344,54 @@ function resizeImage(file,maxDim=1280,q=0.7){
     img.src=url;
   });
 }
-function loadThumb(imgEl,imgId){ idbGet(imgId).then(d=>{ if(d) imgEl.src=d; else imgEl.alt="photo not on this device"; }).catch(()=>{ imgEl.alt="photo unavailable"; }); }
-function openLightbox(imgId){ idbGet(imgId).then(d=>{ if(!d) return; const lb=document.createElement("div"); lb.className="lightbox"; lb.innerHTML=`<img alt="">`; lb.querySelector("img").src=d; lb.onclick=()=>lb.remove(); $("lightboxHost").appendChild(lb); }); }
+// fetch an image from the local cache, falling back to the cloud (and caching it)
+async function getImg(id){
+  let d=await idbGet(id);
+  if(d) return d;
+  if(window.PP_cloudGetImage){ try{ d=await window.PP_cloudGetImage(id); if(d){ try{ await idbPut(id,d); }catch(e){} return d; } }catch(e){} }
+  return null;
+}
+function loadThumb(imgEl,imgId){ getImg(imgId).then(d=>{ if(d) imgEl.src=d; else imgEl.alt="photo not synced yet"; }).catch(()=>{ imgEl.alt="photo unavailable"; }); }
+function openLightbox(imgId){ getImg(imgId).then(d=>{ if(!d) return; const lb=document.createElement("div"); lb.className="lightbox"; lb.innerHTML=`<img alt="">`; lb.querySelector("img").src=d; lb.onclick=()=>lb.remove(); $("lightboxHost").appendChild(lb); }); }
+
+/* ---- tank photos (one rolling latest photo per tank, compressed + cloud-synced) ---- */
+function renderTanks(){
+  const host=$("tanksList"); if(!host) return;
+  if(!tanks||!tanks.length){ host.innerHTML=`<p class="muted">No tanks yet — tap “+ Add tank”.</p>`; return; }
+  host.innerHTML=tanks.map((t,i)=>`
+    <div class="tankrow">
+      <input class="tnm" type="text" value="${escapeHtml(t.name||"")}" placeholder="Tank name" data-i="${i}">
+      <div class="tkthumb">${t.photoId?`<img data-img="${t.photoId}" alt="">`:`<span class="muted" style="font-size:11px">no photo</span>`}</div>
+      <label class="photobtn" style="font-size:12px;padding:7px 9px">📷<input type="file" accept="image/*" capture="environment" data-tank="${i}" style="display:none"></label>
+      <button class="danger tiny" data-deltank="${i}">✕</button>
+    </div>`).join("");
+  host.querySelectorAll("img[data-img]").forEach(im=>{ loadThumb(im,im.dataset.img); im.onclick=()=>openLightbox(im.dataset.img); });
+  host.querySelectorAll("input.tnm").forEach(inp=> inp.addEventListener("change",e=>{ tanks[+e.target.dataset.i].name=e.target.value; saveAll(); }));
+  host.querySelectorAll('input[type="file"][data-tank]').forEach(inp=> inp.addEventListener("change",e=>updateTankPhoto(+e.target.dataset.tank,e)));
+  host.querySelectorAll("[data-deltank]").forEach(b=> b.onclick=()=>deleteTank(+b.dataset.deltank));
+}
+async function updateTankPhoto(i,e){
+  const f=e.target.files&&e.target.files[0]; e.target.value="";
+  const t=tanks[i]; if(!f||!t) return;
+  if($("tankMsg")) $("tankMsg").textContent="Saving photo…";
+  try{
+    const d=await resizeImage(f,1100,0.6);
+    const oldId=t.photoId, id="im"+Math.random().toString(36).slice(2,10);
+    await idbPut(id,d);
+    if(window.PP_cloudPutImage) await window.PP_cloudPutImage(id,d);
+    t.photoId=id; t.updated=Date.now();
+    if(oldId){ idbDel(oldId); if(window.PP_cloudDeleteImage) window.PP_cloudDeleteImage(oldId); }
+    saveAll(); renderTanks();
+    logAction(`Updated tank photo — ${t.name||"tank"}`);
+    if($("tankMsg")) $("tankMsg").textContent="✓ Photo saved.";
+  }catch(err){ if($("tankMsg")) $("tankMsg").textContent="Couldn't read that image (try a JPG/PNG)."; }
+}
+function deleteTank(i){
+  const t=tanks[i]; if(!t) return;
+  if(!confirm('Delete tank "'+(t.name||"")+'" and its photo?')) return;
+  if(t.photoId){ idbDel(t.photoId); if(window.PP_cloudDeleteImage) window.PP_cloudDeleteImage(t.photoId); }
+  tanks.splice(i,1); saveAll(); renderTanks(); logAction(`Deleted tank "${t.name||""}"`);
+}
 
 function renderDraftThumbs(){
   const host=$("noteThumbs"); if(!host) return;
@@ -1384,7 +1447,7 @@ $("backupHead").onclick=()=>{
 function buildBackupText(){
   // note text/meta travels; photos live in the device image store and are not included
   const notesNoBlobs = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[]}));
-  $("backupText").value = JSON.stringify({app:"pivotpump",v:3,pumps,pivots,passes,actlog,notes:notesNoBlobs,selIdx});
+  $("backupText").value = JSON.stringify({app:"pivotpump",v:4,pumps,pivots,passes,actlog,notes:notesNoBlobs,tanks,selIdx});
 }
 $("copyBackup").onclick=()=>{
   buildBackupText();
@@ -1409,9 +1472,10 @@ $("restoreBackup").onclick=()=>{
   passes=Array.isArray(data.passes)?data.passes:[];
   notes=Array.isArray(data.notes)?data.notes:[];
   if(Array.isArray(data.actlog)) actlog=data.actlog;
+  if(Array.isArray(data.tanks)) tanks=data.tanks;
   selIdx=Number.isInteger(data.selIdx)&&data.selIdx<pivots.length?data.selIdx:0;
   saveAll(); saveLog();
-  renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog(); renderActivityLog(); renderNotes();
+  renderPumps(); rebuildPumpSelect(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog(); renderActivityLog(); renderNotes(); renderTanks();
   logAction(`Restored backup — ${pivots.length} pivots, ${pumps.length} pumps, ${np} passes, ${nn} notes`);
   $("backupMsg").textContent="✅ Restored "+pivots.length+" pivots, "+pumps.length+" pumps, "+np+" passes, "+nn+" notes. (Photos stay on their original device.)";
 };
@@ -1421,14 +1485,14 @@ document.querySelectorAll("input").forEach(el=>el.addEventListener("input",compu
 $("t_dir").addEventListener("change",computeAll);
 
 /* ---------- boot ---------- */
-renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog(); renderActivityLog(); wireNotes(); renderNotes();
+renderPumps(); rebuildPumpSelect(); renderSelect(); applyPivotDefaults(); renderLog(); renderActivityLog(); wireNotes(); renderNotes(); renderTanks();
 </script>
 
 <!-- ===================== FIREBASE CLOUD SYNC ===================== -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, onSnapshot, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, onSnapshot, setDoc, getDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD-76VykMSh5-RCCh9ty7d-kwAMKntgj1U",
@@ -1492,6 +1556,19 @@ try{
   window.PP_authReset = async (email)=>{
     try{ await sendPasswordResetEmail(auth, email); return {ok:true}; }
     catch(e){ return {ok:false, msg:e.code||e.message}; }
+  };
+  // per-image cloud storage (compressed photos as their own Firestore docs)
+  window.PP_cloudPutImage = async (id, dataURL)=>{
+    if(!auth || !auth.currentUser) return false;
+    try{ await setDoc(doc(db,"users",auth.currentUser.uid,"images",id),{data:dataURL,t:Date.now()}); return true; }catch(e){ return false; }
+  };
+  window.PP_cloudGetImage = async (id)=>{
+    if(!auth || !auth.currentUser) return null;
+    try{ const s=await getDoc(doc(db,"users",auth.currentUser.uid,"images",id)); return s.exists()? s.data().data : null; }catch(e){ return null; }
+  };
+  window.PP_cloudDeleteImage = async (id)=>{
+    if(!auth || !auth.currentUser) return;
+    try{ await deleteDoc(doc(db,"users",auth.currentUser.uid,"images",id)); }catch(e){}
   };
 }catch(e){
   console.warn("Firebase unavailable:", e);
