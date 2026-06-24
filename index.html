@@ -190,6 +190,12 @@
           <input id="e_product" type="text" placeholder="e.g. 28-0-0-5S">
         </div>
       </div>
+      <div class="row">
+        <div>
+          <label>Applied so far this season (gal) <span class="hint">(fills the progress bar)</span></label>
+          <input id="e_applied" type="number" step="any" inputmode="decimal">
+        </div>
+      </div>
       <details>
         <summary>Optional: water precip readout</summary>
         <div class="row" style="margin-top:8px">
@@ -524,6 +530,21 @@ function seedSeasonTargets(){
   });
   return changed;
 }
+/* Fertigation applied-to-date per pivot as of 2026-06-23, tracked off the tank writing.
+   `seasonApplied` is gallons recorded directly (the user tracks totals, doesn't log per-pass);
+   it feeds the season bar on top of any logged passes. Seeded once if unset, then user-owned —
+   edit it in the pivot's Edit panel, or it can be bumped in code on the next deploy. */
+const SEASON_APPLIED_2026 = {
+  "East Young":2750, "West Young":2800, "HBF":2570, "Spanjer":2200, "Switzer":1400,
+};
+function seedSeasonApplied(){
+  let changed=false;
+  (pivots||[]).forEach(p=>{
+    const g=SEASON_APPLIED_2026[p.name];
+    if(g!=null && p.seasonApplied==null){ p.seasonApplied=g; changed=true; }
+  });
+  return changed;
+}
 
 /* ---------- load with migration from the old per-pivot-size format ---------- */
 let pumps, pivots, selIdx, passes, actlog, notes, draft, tanks;
@@ -545,7 +566,7 @@ let pumps, pivots, selIdx, passes, actlog, notes, draft, tanks;
     }
     saveAll();
   }
-  if(seedSeasonTargets()) saveAll();
+  { let ch=seedSeasonTargets(); if(seedSeasonApplied()) ch=true; if(ch) saveAll(); }
   selIdx = parseInt(localStorage.getItem(K_SEL)||"0",10)||0;
   if(selIdx>=pivots.length) selIdx=0;
   try{ const pp=JSON.parse(localStorage.getItem(K_PASSES)); passes=Array.isArray(pp)?pp:[]; }catch(e){ passes=[]; }
@@ -568,7 +589,7 @@ function applyRemote(str){
   if(!data||!Array.isArray(data.pumps)||!Array.isArray(data.pivots)||!data.pumps.length||!data.pivots.length) return;
   try{ localStorage.setItem("pivotpump.presync.backup", syncPayload()); }catch(e){}   // safety stash
   pumps=data.pumps; pivots=data.pivots;
-  seedSeasonTargets();   // fill targets on any pivot the remote payload lacks them on
+  seedSeasonTargets(); seedSeasonApplied();   // fill targets/applied on any pivot the remote payload lacks them on
   passes=Array.isArray(data.passes)?data.passes:[];
   if(Array.isArray(data.actlog)) actlog=data.actlog;
   notes=Array.isArray(data.notes)?data.notes:[];
@@ -713,9 +734,11 @@ function renderSelect(){
   renderSeasonProgress();
 }
 
-// total fertilizer applied to a pivot across all finished passes (its season-to-date)
+// total fertilizer applied to a pivot this season: the directly-recorded `seasonApplied`
+// baseline plus anything from logged passes
 function appliedForPivot(name){
-  let g=0;
+  const pv=pivots.find(p=>p.name===name);
+  let g=(pv&&isFinite(pv.seasonApplied))?pv.seasonApplied:0;
   passes.forEach(p=>{ if(p.status==="done"&&p.pivot===name){ const s=summarize(p); if(isFinite(s.applied)) g+=s.applied; } });
   return g;
 }
@@ -766,12 +789,13 @@ $("e_mode").onchange=refreshCalLabel;
 
 function openEditor(isNew){
   editingNew=isNew;
-  const p=isNew?{name:"",mode:"timer",cal:"",deg:360,pump:0,tank:"",gpm:"",acres:"",defSpeed:"",seasonTarget:"",seasonProduct:""}:pivots[selIdx];
+  const p=isNew?{name:"",mode:"timer",cal:"",deg:360,pump:0,tank:"",gpm:"",acres:"",defSpeed:"",seasonTarget:"",seasonProduct:"",seasonApplied:""}:pivots[selIdx];
   rebuildPumpSelect();
   $("e_name").value=p.name; $("e_mode").value=p.mode||"timer"; refreshCalLabel();
   $("e_cal").value=p.cal; $("e_deg").value=p.deg; $("e_pump").value=p.pump||0;
   $("e_tank").value=p.tank; $("e_gpm").value=p.gpm||""; $("e_acres").value=p.acres||"";
   $("e_season").value=p.seasonTarget!=null?p.seasonTarget:""; $("e_product").value=p.seasonProduct||"";
+  $("e_applied").value=p.seasonApplied!=null?p.seasonApplied:"";
   $("deleteBtn").style.display=isNew?"none":"block";
   $("editor").hidden=false; $("editToggle").textContent="Close";
 }
@@ -792,12 +816,13 @@ $("saveBtn").onclick=()=>{
     defSpeed:mode==="timer"?15:0.30,
     seasonTarget:(()=>{const v=parseFloat($("e_season").value);return isFinite(v)?v:0;})(),
     seasonProduct:$("e_product").value.trim(),
+    seasonApplied:(()=>{const v=parseFloat($("e_applied").value);return isFinite(v)?v:0;})(),
   };
   const wasNew=editingNew;
   if(editingNew){ pivots.push(p); selIdx=pivots.length-1; }
   else { const o=pivots[selIdx]; p.defSpeed=o.defSpeed||p.defSpeed; p.lastPump=o.lastPump; p.lastCheck=o.lastCheck; pivots[selIdx]=p; }
   saveAll(); closeEditor(); renderSelect(); resetAuto(); applyPivotDefaults(); renderLog();
-  logAction(`${wasNew?"Added":"Edited"} pivot "${p.name}" — ${p.mode}, cal ${p.cal}, ${p.deg}°, pump "${(pumps[p.pump]||{}).name||"?"}", tank ${p.tank}${p.seasonTarget?`, season ${fmt(p.seasonTarget,0)} gal`:""}`);
+  logAction(`${wasNew?"Added":"Edited"} pivot "${p.name}" — ${p.mode}, cal ${p.cal}, ${p.deg}°, pump "${(pumps[p.pump]||{}).name||"?"}", tank ${p.tank}${p.seasonTarget?`, season ${fmt(p.seasonTarget,0)} gal`:""}${p.seasonApplied?`, applied ${fmt(p.seasonApplied,0)} gal`:""}`);
 };
 $("deleteBtn").onclick=()=>{
   if(pivots.length<=1){ alert("Keep at least one pivot."); return; }
@@ -1239,7 +1264,8 @@ function renderHistory(){
   }).join("");
   const totals=`<div style="margin-top:6px">`+Object.entries(byPivot).map(([nm,v])=>{
     const pv=pivots.find(pp=>pp.name===nm), tgt=pv&&isFinite(pv.seasonTarget)&&pv.seasonTarget>0?pv.seasonTarget:NaN;
-    const tnote=isFinite(tgt)?` <span class="muted">— ${v.gal>=tgt?"plan met":fmt(tgt-v.gal,0)+" of "+fmt(tgt,0)+" gal to go"}</span>`:"";
+    const applied=appliedForPivot(nm);
+    const tnote=isFinite(tgt)?` <span class="muted">— ${applied>=tgt?"plan met":fmt(tgt-applied,0)+" of "+fmt(tgt,0)+" gal to go"}</span>`:"";
     return `<div class="tot"><span>${escapeHtml(nm)} <span class="muted">(${v.n})</span>${tnote}</span><b>${fmt(v.gal,0)} gal</b></div>`;
   }).join("")+`<div class="tot"><span><b>All pivots</b></span><b>${fmt(grand,0)} gal</b></div></div>`;
   body.innerHTML=items+totals+`<button class="ghost sm" id="copyHist" style="margin-top:10px">Copy history as CSV</button><div id="histMsg" class="muted" style="margin-top:6px"></div>`;
@@ -1333,7 +1359,7 @@ MODEL:
 
 ON-TRACK CHECK (observation-based, ignores doubtful dial values): inputs are starting gal, current gal, total degrees, beginning+current position and direction (forward=clockwise). Degrees covered = angular travel in that direction. Compares actual gal/deg pace to the pace needed; recommends a new pivot setting and/or pump % by scaling the CURRENT dial by the factor, so calibration error cancels. Guards near-empty and over-100% cases. Also derives actual GPH and deg/hr between two logged checks (flags pivot stopped/idle/refill). Auto-saves a snapshot to the activity log.
 
-SEASON FERTIGATION PLAN: each pivot can carry a seasonTarget (gallons of product to inject across the year, from the agronomist's field plan) and a seasonProduct label. An always-visible progress bar under the pivot name shows applied-to-date / target and gallons-to-go (sums all finished passes for that pivot), repeated in the History totals. 2026 plan: East Young 8205 gal 28-0-0-5S, West Young 8006 gal 28-0-0-5S, HBF 8251 gal 26-0-3-3, Spanjer 7922 gal 26-0-3-3, Switzer 6799 gal 28-0-0-5S (seeded by pivot name; user-editable).
+SEASON FERTIGATION PLAN: each pivot carries a seasonTarget (gallons of product to inject across the year, from the agronomist's field plan), a seasonProduct label, and seasonApplied (gallons put on so far, recorded directly since the user tracks totals rather than logging each pass). An always-visible progress bar under the pivot name shows applied-to-date / target and gallons-to-go; applied = seasonApplied baseline + any logged passes. All three are editable in the pivot's Edit panel. 2026 plan (target / applied-as-of-6-23): East Young 8205/2750 (28-0-0-5S), West Young 8006/2800 (28-0-0-5S), HBF 8251/2570 (26-0-3-3), Spanjer 7922/2200 (26-0-3-3), Switzer 6799/1400 (28-0-0-5S); seeded by pivot name.
 
 FEATURES: Find pivot speed, Find pump setting, On-track check, Log & history (log position+gallons -> application profile, dry-wedge detection, Christiansen uniformity, season totals vs target, CSV), Notes & photos (free-form note photos are device-only), Tank photos (5 tanks, one rolling latest photo each that replaces the prior one; compressed and cloud-synced), Activity log (automatic audit trail), Backup/Restore, and Firebase cloud sync (email/password, local-first, syncs phone<->Mac, offline-capable; per-image compressed photos stored as Firestore docs under users/{uid}/images).
 
@@ -1556,7 +1582,7 @@ $("restoreBackup").onclick=()=>{
   const nl=Array.isArray(data.actlog)?data.actlog.length:0;
   if(!confirm("Restore "+data.pivots.length+" pivots, "+data.pumps.length+" pumps, "+np+" passes, "+nn+" notes and "+nl+" log events? This replaces what's here now.")) return;
   pumps=data.pumps; pivots=data.pivots;
-  seedSeasonTargets();   // fill targets on any pivot the backup lacks them on
+  seedSeasonTargets(); seedSeasonApplied();   // fill targets/applied on any pivot the backup lacks them on
   passes=Array.isArray(data.passes)?data.passes:[];
   notes=Array.isArray(data.notes)?data.notes:[];
   if(Array.isArray(data.actlog)) actlog=data.actlog;
