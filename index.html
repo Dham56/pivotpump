@@ -121,6 +121,7 @@
   .seasonprog.over .fill{background:var(--ok)}
   .seasonprog .sub{margin-top:5px;font-weight:600}
   .seasonprog.over .sub{color:var(--ok)}
+  .pivotnote{margin-top:10px;font-size:13px;color:var(--amber);background:#fdf3e2;border:1px solid #f0d8a8;border-radius:9px;padding:9px 11px;line-height:1.35}
 </style>
 </head>
 <body>
@@ -145,6 +146,7 @@
     </div>
 
     <div class="seasonprog" id="seasonProg" hidden></div>
+    <div class="pivotnote" id="pivotNote" hidden></div>
 
     <div class="editor" id="editor" hidden>
       <div class="row">
@@ -194,6 +196,12 @@
         <div>
           <label>Applied so far this season (gal) <span class="hint">(fills the progress bar)</span></label>
           <input id="e_applied" type="number" step="any" inputmode="decimal">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Field note / reminder <span class="hint">(shows on the pivot &amp; rides along with Get help)</span></label>
+          <textarea id="e_fieldnote" rows="2" placeholder="e.g. make-up wedge to even out next pass"></textarea>
         </div>
       </div>
       <details>
@@ -545,6 +553,19 @@ function seedSeasonApplied(){
   });
   return changed;
 }
+/* Per-pivot field notes / reminders — shown on the pivot card, editable, and carried in the
+   Get help bundle. Seeded once if unset, then user-owned (clear it in Edit when handled). */
+const FIELD_NOTE_SEED = {
+  "East Young":"Make-up wedge: last pass ran ~10° dry (water only at the end, pass ~6/7). Next pass, over-apply that ~10° wedge at ~2× the normal rate to even it out. Clear this note once it's made up.",
+};
+function seedFieldNotes(){
+  let changed=false;
+  (pivots||[]).forEach(p=>{
+    const n=FIELD_NOTE_SEED[p.name];
+    if(n!=null && p.fieldNote==null){ p.fieldNote=n; changed=true; }
+  });
+  return changed;
+}
 
 /* ---------- load with migration from the old per-pivot-size format ---------- */
 let pumps, pivots, selIdx, passes, actlog, notes, draft, tanks;
@@ -566,7 +587,7 @@ let pumps, pivots, selIdx, passes, actlog, notes, draft, tanks;
     }
     saveAll();
   }
-  { let ch=seedSeasonTargets(); if(seedSeasonApplied()) ch=true; if(ch) saveAll(); }
+  { let ch=seedSeasonTargets(); if(seedSeasonApplied()) ch=true; if(seedFieldNotes()) ch=true; if(ch) saveAll(); }
   selIdx = parseInt(localStorage.getItem(K_SEL)||"0",10)||0;
   if(selIdx>=pivots.length) selIdx=0;
   try{ const pp=JSON.parse(localStorage.getItem(K_PASSES)); passes=Array.isArray(pp)?pp:[]; }catch(e){ passes=[]; }
@@ -589,7 +610,7 @@ function applyRemote(str){
   if(!data||!Array.isArray(data.pumps)||!Array.isArray(data.pivots)||!data.pumps.length||!data.pivots.length) return;
   try{ localStorage.setItem("pivotpump.presync.backup", syncPayload()); }catch(e){}   // safety stash
   pumps=data.pumps; pivots=data.pivots;
-  seedSeasonTargets(); seedSeasonApplied();   // fill targets/applied on any pivot the remote payload lacks them on
+  seedSeasonTargets(); seedSeasonApplied(); seedFieldNotes();   // fill targets/applied/notes on any pivot the remote payload lacks them on
   passes=Array.isArray(data.passes)?data.passes:[];
   if(Array.isArray(data.actlog)) actlog=data.actlog;
   notes=Array.isArray(data.notes)?data.notes:[];
@@ -732,6 +753,14 @@ function renderSelect(){
   const p=pivots[selIdx];
   $("pivotPill").textContent = `${p.deg}° · ${pumpName(p)} ${fmt(pumpCap(p),0)} · ${isTimer(p)?"timer %":"depth"}`;
   renderSeasonProgress();
+  renderPivotNote();
+}
+// per-pivot field note / reminder, shown on the pivot card (and carried in the Get help bundle)
+function renderPivotNote(){
+  const el=$("pivotNote"); if(!el) return;
+  const p=pivots[selIdx], n=(p.fieldNote||"").trim();
+  if(!n){ el.hidden=true; el.innerHTML=""; return; }
+  el.hidden=false; el.innerHTML=`📝 ${escapeHtml(n)}`;
 }
 
 // total fertilizer applied to a pivot this season: the directly-recorded `seasonApplied`
@@ -789,13 +818,14 @@ $("e_mode").onchange=refreshCalLabel;
 
 function openEditor(isNew){
   editingNew=isNew;
-  const p=isNew?{name:"",mode:"timer",cal:"",deg:360,pump:0,tank:"",gpm:"",acres:"",defSpeed:"",seasonTarget:"",seasonProduct:"",seasonApplied:""}:pivots[selIdx];
+  const p=isNew?{name:"",mode:"timer",cal:"",deg:360,pump:0,tank:"",gpm:"",acres:"",defSpeed:"",seasonTarget:"",seasonProduct:"",seasonApplied:"",fieldNote:""}:pivots[selIdx];
   rebuildPumpSelect();
   $("e_name").value=p.name; $("e_mode").value=p.mode||"timer"; refreshCalLabel();
   $("e_cal").value=p.cal; $("e_deg").value=p.deg; $("e_pump").value=p.pump||0;
   $("e_tank").value=p.tank; $("e_gpm").value=p.gpm||""; $("e_acres").value=p.acres||"";
   $("e_season").value=p.seasonTarget!=null?p.seasonTarget:""; $("e_product").value=p.seasonProduct||"";
   $("e_applied").value=p.seasonApplied!=null?p.seasonApplied:"";
+  $("e_fieldnote").value=p.fieldNote||"";
   $("deleteBtn").style.display=isNew?"none":"block";
   $("editor").hidden=false; $("editToggle").textContent="Close";
 }
@@ -817,6 +847,7 @@ $("saveBtn").onclick=()=>{
     seasonTarget:(()=>{const v=parseFloat($("e_season").value);return isFinite(v)?v:0;})(),
     seasonProduct:$("e_product").value.trim(),
     seasonApplied:(()=>{const v=parseFloat($("e_applied").value);return isFinite(v)?v:0;})(),
+    fieldNote:$("e_fieldnote").value.trim(),
   };
   const wasNew=editingNew;
   if(editingNew){ pivots.push(p); selIdx=pivots.length-1; }
@@ -1370,7 +1401,7 @@ CALIBRATIONS (East Young confirmed against AgSense telemetry: ~9.7-9.9 hr@100% a
 - Spanjer: depth, cal 107.93, 360deg, pump 18, tank 1450, 550 GPM, 117.6 ac.
 - HBF: depth, cal 76.52, 360deg, pump 55, tank 1450, 750 GPM, 126.9 ac.
 
-MAKE-UP WEDGE: if the tank runs dry before the pass finishes, the missed wedge (degrees that got water only) should get ~double the normal rate on the next pass to even out the application (its own share plus the share it missed).
+MAKE-UP WEDGE: if the tank runs dry before the pass finishes, the missed wedge (degrees that got water only) should get ~double the normal rate on the next pass to even out the application (its own share plus the share it missed). Any current make-up or reminder for the selected pivot appears as a "Field note" in the context above (editable per pivot in the app; cleared once handled).
 
 USER PREFERENCE: wants complete AUTOMATIC logging; never rely on a manual save tap (used in the field with sun glare).`;
 
@@ -1386,7 +1417,7 @@ function buildHelpBundle(){
 (Replace this line with your question or what's going wrong.)
 
 --- context (auto-attached so Claude has the full picture) ---
-Selected pivot: ${p.name} | ${p.mode} | cal ${p.cal} | ${p.deg}° | pump "${pu.name}" cap ${pu.cap} GPH | tank ${p.tank} | gpm ${p.gpm} | acres ${p.acres}
+Selected pivot: ${p.name} | ${p.mode} | cal ${p.cal} | ${p.deg}° | pump "${pu.name}" cap ${pu.cap} GPH | tank ${p.tank} | gpm ${p.gpm} | acres ${p.acres}${isFinite(p.seasonTarget)&&p.seasonTarget>0?` | season ${fmt(appliedForPivot(p.name),0)}/${fmt(p.seasonTarget,0)} gal applied`:""}${p.fieldNote?`\nField note for ${p.name}: ${p.fieldNote}`:""}
 Pumps: ${pumps.map(x=>x.name+" "+x.cap).join(", ")}
 Cloud sync: ${sync}
 Passes: ${passes.length} | Notes: ${notes.length} | Activity events: ${actlog.length}
@@ -1582,7 +1613,7 @@ $("restoreBackup").onclick=()=>{
   const nl=Array.isArray(data.actlog)?data.actlog.length:0;
   if(!confirm("Restore "+data.pivots.length+" pivots, "+data.pumps.length+" pumps, "+np+" passes, "+nn+" notes and "+nl+" log events? This replaces what's here now.")) return;
   pumps=data.pumps; pivots=data.pivots;
-  seedSeasonTargets(); seedSeasonApplied();   // fill targets/applied on any pivot the backup lacks them on
+  seedSeasonTargets(); seedSeasonApplied(); seedFieldNotes();   // fill targets/applied/notes on any pivot the backup lacks them on
   passes=Array.isArray(data.passes)?data.passes:[];
   notes=Array.isArray(data.notes)?data.notes:[];
   if(Array.isArray(data.actlog)) actlog=data.actlog;
