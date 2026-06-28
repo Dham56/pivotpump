@@ -1431,11 +1431,29 @@ ${syncPayload()}
 --- project background (so a fresh Claude knows the app) ---
 ${PP_BRIEFING}`;
 }
+// copy the bundle to the clipboard; resolves true/false (used as the desktop path & a fallback)
+function copyHelpBundle(text){
+  if(navigator.clipboard&&navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(()=>true,()=>false);
+  // legacy fallback
+  try{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.focus(); ta.select(); const ok=document.execCommand("copy"); ta.remove(); return Promise.resolve(!!ok); }catch(e){ return Promise.resolve(false); }
+}
+const isMobileLike = () => (window.matchMedia&&window.matchMedia("(pointer:coarse)").matches) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 $("helpBtn").onclick=()=>{
   const text=buildHelpBundle();
-  const ok=()=>showToast("✓ Copied your PivotPump details — paste them into Claude and describe your issue.");
-  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok,()=>fallbackCopy(text,ok)); else fallbackCopy(text,ok);
-  window.open("https://claude.ai/new","_blank");
+  // PHONE: hand the whole brief to the native share sheet — one tap, then pick Claude.
+  // No clipboard/popup race. Call share() FIRST so it still has the tap's user-gesture.
+  if(isMobileLike() && navigator.share){
+    navigator.share({title:"PivotPump — help", text})
+      .then(()=>showToast("Shared ✓ — pick Claude, then hit send."))
+      .catch(err=>{ if(err&&err.name==="AbortError") return;   // user just closed the sheet
+        copyHelpBundle(text).then(ok=>showToast(ok?"Couldn't open share — your details are copied. Open Claude and paste.":"Press-and-hold the page to copy your details.")); });
+    return;
+  }
+  // DESKTOP: copy first (finish before anything steals focus), then open Claude to paste into.
+  copyHelpBundle(text).then(ok=>{
+    showToast(ok?"✓ Your PivotPump details are copied — in Claude, paste with Ctrl/Cmd+V.":"Select the page text and copy it, then paste into Claude.");
+    window.open("https://claude.ai/new","_blank","noopener");
+  });
 };
 
 $("syncReset").onclick=async()=>{
