@@ -470,15 +470,6 @@
 
   <!-- MODE: NOTES -->
   <div class="card mode" data-mode="notes" hidden>
-    <h2>🛢️ Tank photos</h2>
-    <p class="muted">A rolling photo of each tank's running notes — snap a fresh one when you add writing and it replaces the old one. Compressed and synced to all your signed-in devices.</p>
-    <div id="tanksList"></div>
-    <div style="display:flex;gap:10px;margin-top:8px;align-items:center;flex-wrap:wrap">
-      <button class="ghost sm" id="addTankBtn">+ Add tank</button>
-      <button class="ghost sm" id="tanksFromPivots">Add a tank for each pivot</button>
-      <span class="muted" id="tankMsg"></span>
-    </div>
-    <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
     <h2>📝 Notes</h2>
     <p class="muted">Jot anything — field conditions, problems, reminders — and attach photos. Pick which pivot the note is about below (it defaults to the one you're on). Note text syncs; note photos stay on this device.</p>
     <label>This note is about</label>
@@ -496,6 +487,16 @@
       <span class="muted" id="copyNotesMsg"></span>
     </div>
     <div id="notesList" style="margin-top:10px"></div>
+
+    <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
+    <h2>🛢️ Tank photos</h2>
+    <p class="muted">A rolling photo of each tank's running notes — snap a fresh one when you add writing and it replaces the old one. Compressed and synced to all your signed-in devices.</p>
+    <div id="tanksList"></div>
+    <div style="display:flex;gap:10px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      <button class="ghost sm" id="addTankBtn">+ Add tank</button>
+      <button class="ghost sm" id="tanksFromPivots">Add a tank for each pivot</button>
+      <span class="muted" id="tankMsg"></span>
+    </div>
   </div>
 
   <div id="lightboxHost"></div>
