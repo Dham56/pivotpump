@@ -283,7 +283,7 @@
       <span class="chev">▾</span>
     </div>
     <div class="body">
-      <p class="muted" style="margin-top:10px">Sign in to automatically sync your pumps, pivots, passes &amp; activity log across your phone and computer. Works offline and syncs when you have signal. (Photos stay on each device.)</p>
+      <p class="muted" style="margin-top:10px">Sign in to automatically sync your pumps, pivots, passes, notes &amp; photos across your phone and computer. Works offline and syncs when you have signal.</p>
       <div id="syncSignedOut">
         <div class="row"><div><label>Email</label><input id="sync_email" type="email" autocomplete="username"></div></div>
         <div class="row"><div><label>Password</label><input id="sync_pw" type="password" autocomplete="current-password"></div></div>
@@ -471,7 +471,7 @@
   <!-- MODE: NOTES -->
   <div class="card mode" data-mode="notes" hidden>
     <h2>📝 Notes</h2>
-    <p class="muted">Jot anything — field conditions, problems, reminders — and attach photos. Pick which pivot the note is about below (it defaults to the one you're on). Note text syncs; note photos stay on this device.</p>
+    <p class="muted">Jot anything — field conditions, problems, reminders — and attach photos. Pick which pivot the note is about below (it defaults to the one you're on). Text and photos both sync to your signed-in devices.</p>
     <label>This note is about</label>
     <select id="notePivot"></select>
     <textarea id="noteText" rows="3" placeholder="Type a note…" style="margin-top:8px"></textarea>
@@ -487,16 +487,6 @@
       <span class="muted" id="copyNotesMsg"></span>
     </div>
     <div id="notesList" style="margin-top:10px"></div>
-
-    <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
-    <h2>🛢️ Tank photos</h2>
-    <p class="muted">A rolling photo of each tank's running notes — snap a fresh one when you add writing and it replaces the old one. Compressed and synced to all your signed-in devices.</p>
-    <div id="tanksList"></div>
-    <div style="display:flex;gap:10px;margin-top:8px;align-items:center;flex-wrap:wrap">
-      <button class="ghost sm" id="addTankBtn">+ Add tank</button>
-      <button class="ghost sm" id="tanksFromPivots">Add a tank for each pivot</button>
-      <span class="muted" id="tankMsg"></span>
-    </div>
   </div>
 
   <div id="lightboxHost"></div>
@@ -1366,8 +1356,11 @@ $("calHead").onclick=()=>$("calCard").classList.toggle("collapsed");
 
 /* ---------- cloud sync UI wiring ---------- */
 $("syncHead").onclick=()=>$("syncCard").classList.toggle("collapsed");
-$("addTankBtn").onclick=()=>{ tanks.push({id:"tk"+Math.random().toString(36).slice(2,8),name:"New tank",photoId:null,updated:null}); saveAll(); renderTanks(); };
-$("tanksFromPivots").onclick=()=>{
+// Tank-photos UI was removed (photos now live in notes and sync). The `tanks` data + any
+// existing tank images are preserved in the payload so nothing is orphaned; these handlers
+// are guarded in case the elements are gone.
+if($("addTankBtn")) $("addTankBtn").onclick=()=>{ tanks.push({id:"tk"+Math.random().toString(36).slice(2,8),name:"New tank",photoId:null,updated:null}); saveAll(); renderTanks(); };
+if($("tanksFromPivots")) $("tanksFromPivots").onclick=()=>{
   const have=new Set(tanks.map(t=>(t.name||"").trim()));
   let added=0;
   pivots.forEach(p=>{ if(!have.has(p.name)){ tanks.push({id:"tk"+Math.random().toString(36).slice(2,8),name:p.name,photoId:null,updated:null}); added++; } });
@@ -1400,7 +1393,7 @@ ON-TRACK CHECK (observation-based, ignores doubtful dial values): inputs are sta
 
 SEASON FERTIGATION PLAN: each pivot carries a seasonTarget (gallons of product to inject across the year, from the agronomist's field plan), a seasonProduct label, and seasonApplied (gallons put on so far, recorded directly since the user tracks totals rather than logging each pass). An always-visible progress bar under the pivot name shows applied-to-date / target and gallons-to-go; applied = seasonApplied baseline + any logged passes. All three are editable in the pivot's Edit panel. 2026 plan (target / applied-as-of-6-23): East Young 8205/2750 (28-0-0-5S), West Young 8006/2800 (28-0-0-5S), HBF 8251/2570 (26-0-3-3), Spanjer 7922/2200 (26-0-3-3), Switzer 6799/1400 (28-0-0-5S); seeded by pivot name.
 
-FEATURES: Find pivot speed, Find pump setting, On-track check, Log & history (log position+gallons -> application profile, dry-wedge detection, Christiansen uniformity, season totals vs target, CSV), Notes & photos (free-form note photos are device-only), Tank photos (5 tanks, one rolling latest photo each that replaces the prior one; compressed and cloud-synced), Activity log (automatic audit trail), Backup/Restore, and Firebase cloud sync (email/password, local-first, syncs phone<->Mac, offline-capable; per-image compressed photos stored as Firestore docs under users/{uid}/images).
+FEATURES: Find pivot speed, Find pump setting, On-track check, Log & history (log position+gallons -> application profile, dry-wedge detection, Christiansen uniformity, season totals vs target, CSV), Notes & photos (timestamped notes tagged to a pivot; attach photos which now compress and cloud-sync like everything else — the old separate Tank photos section was removed and folded into notes), Activity log (automatic audit trail), Backup/Restore, and Firebase cloud sync (email/password, local-first, syncs phone<->Mac, offline-capable; per-image compressed photos stored as Firestore docs under users/{uid}/images).
 
 CALIBRATIONS (East Young confirmed against AgSense telemetry: ~9.7-9.9 hr@100% and ~425 GPM):
 - East Young: timer, cal 9.72 hr@100%, 360deg, pump ~55 GPH, tank 3000, 425 GPM, 122 ac.
@@ -1565,7 +1558,7 @@ function renderDraftThumbs(){
   const host=$("noteThumbs"); if(!host) return;
   host.innerHTML=draft.imgs.map(id=>`<div class="th"><img data-img="${id}" alt=""><span class="rm" data-rm="${id}">✕</span></div>`).join("");
   host.querySelectorAll("img[data-img]").forEach(im=>{ loadThumb(im,im.dataset.img); im.onclick=()=>openLightbox(im.dataset.img); });
-  host.querySelectorAll(".rm").forEach(b=>b.onclick=()=>{ const id=b.dataset.rm; draft.imgs=draft.imgs.filter(x=>x!==id); idbDel(id); saveDraft(); renderDraftThumbs(); });
+  host.querySelectorAll(".rm").forEach(b=>b.onclick=()=>{ const id=b.dataset.rm; draft.imgs=draft.imgs.filter(x=>x!==id); idbDel(id); if(window.PP_cloudDeleteImage) window.PP_cloudDeleteImage(id); saveDraft(); renderDraftThumbs(); });
 }
 // <option> list of pivot names, with `sel` pre-selected
 function pivotOptions(sel){ return pivots.map(p=>`<option value="${escapeHtml(p.name)}"${p.name===sel?" selected":""}>${escapeHtml(p.name)}</option>`).join(""); }
@@ -1594,7 +1587,7 @@ function renderNotes(){
   });
   list.querySelectorAll("[data-delnote]").forEach(b=>b.onclick=()=>{
     if(!confirm("Delete this note?")) return;
-    const n=notes.find(x=>x.id===b.dataset.delnote); if(n&&n.imgs) n.imgs.forEach(idbDel);
+    const n=notes.find(x=>x.id===b.dataset.delnote); if(n&&n.imgs) n.imgs.forEach(id=>{ idbDel(id); if(window.PP_cloudDeleteImage) window.PP_cloudDeleteImage(id); });
     notes=notes.filter(x=>x.id!==b.dataset.delnote); saveAll(); renderNotes();
     logAction(`Deleted note${n&&n.pivot?" ("+n.pivot+")":""}`);
   });
@@ -1608,7 +1601,7 @@ function copyNotes(){
     const d=new Date(n.t).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"});
     lines.push(`[${n.pivot||"(untagged)"} · ${d}]`);
     lines.push(n.text||"(no text)");
-    if(n.imgs&&n.imgs.length) lines.push(`(${n.imgs.length} photo${n.imgs.length>1?"s":""} — on device only)`);
+    if(n.imgs&&n.imgs.length) lines.push(`(${n.imgs.length} photo${n.imgs.length>1?"s":""} attached)`);
     lines.push("");
   });
   const text=lines.join("\n").trim();
@@ -1622,8 +1615,14 @@ function wireNotes(){
   const onNotePhoto=async e=>{
     const files=[...e.target.files]; e.target.value=""; $("noteMsg").textContent="Adding photo…";
     for(const f of files){
-      try{ const d=await resizeImage(f); const id=uid(); await idbPut(id,d); draft.imgs.push(id); saveDraft(); renderDraftThumbs(); $("noteMsg").textContent=""; }
-      catch(err){ $("noteMsg").textContent="Couldn't read one image (try a JPG/PNG)."; }
+      try{
+        const d=await resizeImage(f,1100,0.6);              // same compression as tank photos (stays <1MB for the cloud)
+        const id="im"+Math.random().toString(36).slice(2,10);
+        await idbPut(id,d);
+        if(window.PP_cloudPutImage) await window.PP_cloudPutImage(id,d);   // sync the blob like tank photos
+        draft.imgs.push(id); saveDraft(); renderDraftThumbs();
+        $("noteMsg").textContent = window.PP_cloudPutImage ? "✓ Photo added (syncing)." : "✓ Photo added (this device — sign in to sync).";
+      }catch(err){ $("noteMsg").textContent="Couldn't read one image (try a JPG/PNG)."; }
     }
   };
   $("notePhotoCam").addEventListener("change",onNotePhoto);
