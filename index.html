@@ -102,6 +102,7 @@
   .thumbs .rm{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border-radius:50%;width:18px;height:18px;font-size:12px;line-height:18px;text-align:center;cursor:pointer}
   .noteitem{border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px}
   .noteitem .nmeta{font-size:11px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .noteitem .nmeta select{width:auto;padding:3px 8px;font-size:11px;font-weight:600;border-radius:20px;border:1px solid var(--line);background:#fff;color:var(--green-dk)}
   .noteitem .ntext{white-space:pre-wrap;margin-top:4px;font-size:14px}
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:100;padding:18px}
   .lightbox img{max-width:100%;max-height:100%;border-radius:8px}
@@ -479,8 +480,10 @@
     </div>
     <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
     <h2>📝 Notes</h2>
-    <p class="muted">Jot anything — field conditions, problems, reminders — and attach photos. Each note is timestamped and tagged with the current pivot. Note text syncs; note photos stay on this device.</p>
-    <textarea id="noteText" rows="3" placeholder="Type a note…"></textarea>
+    <p class="muted">Jot anything — field conditions, problems, reminders — and attach photos. Pick which pivot the note is about below (it defaults to the one you're on). Note text syncs; note photos stay on this device.</p>
+    <label>This note is about</label>
+    <select id="notePivot"></select>
+    <textarea id="noteText" rows="3" placeholder="Type a note…" style="margin-top:8px"></textarea>
     <div class="thumbs" id="noteThumbs"></div>
     <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
       <label class="photobtn">📷 Camera<input id="notePhotoCam" type="file" accept="image/*" capture="environment" multiple style="display:none"></label>
@@ -1559,19 +1562,31 @@ function renderDraftThumbs(){
   host.querySelectorAll("img[data-img]").forEach(im=>{ loadThumb(im,im.dataset.img); im.onclick=()=>openLightbox(im.dataset.img); });
   host.querySelectorAll(".rm").forEach(b=>b.onclick=()=>{ const id=b.dataset.rm; draft.imgs=draft.imgs.filter(x=>x!==id); idbDel(id); saveDraft(); renderDraftThumbs(); });
 }
+// <option> list of pivot names, with `sel` pre-selected
+function pivotOptions(sel){ return pivots.map(p=>`<option value="${escapeHtml(p.name)}"${p.name===sel?" selected":""}>${escapeHtml(p.name)}</option>`).join(""); }
 function renderNotes(){
   if(!$("notesList")) return;
   if($("noteText") && document.activeElement!==$("noteText")) $("noteText").value=draft.text||"";
+  // composer's "this note is about" picker — defaults to the live pivot unless one was chosen for this draft
+  if($("notePivot")){
+    const cur=(draft.pivot && pivots.some(p=>p.name===draft.pivot)) ? draft.pivot : (pivots[selIdx]&&pivots[selIdx].name);
+    $("notePivot").innerHTML=pivotOptions(cur);
+  }
   renderDraftThumbs();
   const list=$("notesList");
   if(!notes.length){ list.innerHTML=`<p class="muted">No notes yet.</p>`; return; }
   list.innerHTML=[...notes].sort((a,b)=>b.t-a.t).map(n=>`
     <div class="noteitem">
-      <div class="nmeta"><span>${new Date(n.t).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span>${n.pivot?`<span class="pill">${escapeHtml(n.pivot)}</span>`:""}<span data-delnote="${n.id}" style="margin-left:auto;color:var(--red);cursor:pointer;font-weight:700">Delete</span></div>
+      <div class="nmeta"><span>${new Date(n.t).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><select data-notepivot="${n.id}" title="Which pivot this note is about">${pivotOptions(n.pivot)}</select><span data-delnote="${n.id}" style="margin-left:auto;color:var(--red);cursor:pointer;font-weight:700">Delete</span></div>
       ${n.text?`<div class="ntext">${escapeHtml(n.text)}</div>`:""}
       ${(n.imgs&&n.imgs.length)?`<div class="thumbs">`+n.imgs.map(id=>`<div class="th"><img data-img="${id}" alt=""></div>`).join("")+`</div>`:""}
     </div>`).join("");
   list.querySelectorAll("img[data-img]").forEach(im=>{ loadThumb(im,im.dataset.img); im.onclick=()=>openLightbox(im.dataset.img); });
+  list.querySelectorAll("select[data-notepivot]").forEach(s=>s.onchange=()=>{
+    const n=notes.find(x=>x.id===s.dataset.notepivot); if(!n) return;
+    const old=n.pivot||"(none)"; n.pivot=s.value; saveAll(); renderNotes();
+    logAction(`Re-tagged note "${old}" → "${n.pivot}"`);
+  });
   list.querySelectorAll("[data-delnote]").forEach(b=>b.onclick=()=>{
     if(!confirm("Delete this note?")) return;
     const n=notes.find(x=>x.id===b.dataset.delnote); if(n&&n.imgs) n.imgs.forEach(idbDel);
@@ -1581,6 +1596,7 @@ function renderNotes(){
 }
 function wireNotes(){
   $("noteText").addEventListener("input",e=>{ draft.text=e.target.value; saveDraft(); });
+  if($("notePivot")) $("notePivot").addEventListener("change",e=>{ draft.pivot=e.target.value; saveDraft(); });
   const onNotePhoto=async e=>{
     const files=[...e.target.files]; e.target.value=""; $("noteMsg").textContent="Adding photo…";
     for(const f of files){
@@ -1593,7 +1609,8 @@ function wireNotes(){
   $("saveNoteBtn").onclick=()=>{
     const text=(draft.text||"").trim();
     if(!text && !draft.imgs.length){ $("noteMsg").textContent="Type a note or add a photo first."; return; }
-    const n={id:uid(),t:Date.now(),pivot:pivots[selIdx].name,text,imgs:draft.imgs.slice()};
+    const pv=(draft.pivot && pivots.some(p=>p.name===draft.pivot)) ? draft.pivot : ((pivots[selIdx]&&pivots[selIdx].name)||"");
+    const n={id:uid(),t:Date.now(),pivot:pv,text,imgs:draft.imgs.slice()};
     notes.push(n); draft={text:"",imgs:[]}; saveDraft(); saveAll();
     $("noteText").value=""; $("noteMsg").textContent="✓ Note saved.";
     renderNotes();
