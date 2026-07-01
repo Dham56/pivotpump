@@ -491,7 +491,11 @@
       <button class="sm" id="saveNoteBtn">Save note</button>
       <span class="muted" id="noteMsg"></span>
     </div>
-    <div id="notesList" style="margin-top:14px"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">
+      <button class="ghost sm" id="copyNotesBtn">📋 Copy notes</button>
+      <span class="muted" id="copyNotesMsg"></span>
+    </div>
+    <div id="notesList" style="margin-top:10px"></div>
   </div>
 
   <div id="lightboxHost"></div>
@@ -1594,9 +1598,26 @@ function renderNotes(){
     logAction(`Deleted note${n&&n.pivot?" ("+n.pivot+")":""}`);
   });
 }
+// copy every note as clean, readable text (chronological), for pasting anywhere
+function copyNotes(){
+  const msg=$("copyNotesMsg");
+  if(!notes.length){ if(msg) msg.textContent="No notes to copy yet."; return; }
+  const lines=[`PivotPump — Notes (${notes.length})`,""];
+  [...notes].sort((a,b)=>a.t-b.t).forEach(n=>{
+    const d=new Date(n.t).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"});
+    lines.push(`[${n.pivot||"(untagged)"} · ${d}]`);
+    lines.push(n.text||"(no text)");
+    if(n.imgs&&n.imgs.length) lines.push(`(${n.imgs.length} photo${n.imgs.length>1?"s":""} — on device only)`);
+    lines.push("");
+  });
+  const text=lines.join("\n").trim();
+  const ok=()=>{ if(msg) msg.textContent="✓ Copied all "+notes.length+" notes — paste anywhere."; };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok,()=>fallbackCopy(text,ok)); else fallbackCopy(text,ok);
+}
 function wireNotes(){
   $("noteText").addEventListener("input",e=>{ draft.text=e.target.value; saveDraft(); });
   if($("notePivot")) $("notePivot").addEventListener("change",e=>{ draft.pivot=e.target.value; saveDraft(); });
+  if($("copyNotesBtn")) $("copyNotesBtn").onclick=copyNotes;
   const onNotePhoto=async e=>{
     const files=[...e.target.files]; e.target.value=""; $("noteMsg").textContent="Adding photo…";
     for(const f of files){
