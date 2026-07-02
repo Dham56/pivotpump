@@ -15,10 +15,10 @@ A single self-contained `index.html` fertigation calculator that matches fertili
 - **Precip readout** uses the actual pass hours (not normalized to 360°); an acre-foot = 325,851 gal.
 
 ## On-track check (observation-based)
-Deliberately ignores the (often-inaccurate) dialed pump/speed. Inputs: starting gal, current gal, total degrees, beginning + current position, direction (forward = clockwise). Degrees covered = angular travel in that direction (wrap-around handled). It compares actual `gal/°` pace to the pace needed and recommends a new pivot setting and/or pump % by **scaling the current dial by the factor** — so calibration error cancels. Guards near-empty ("essentially empty") and over-limit (>100%) cases. Also derives actual **GPH** and **°/hr** between two logged checks, flagging pivot **stopped / idle / refill**. Auto-saves a snapshot to the activity log.
+Deliberately ignores the (often-inaccurate) dialed pump/speed. Inputs: starting gal, current gal, total degrees, beginning + current position, direction (forward = clockwise). Degrees covered = angular travel in that direction (wrap-around handled). Passes over 360° (multi-revolution, e.g. one tank over 720°) are supported: a "full laps already completed" field appears when total > 360 and adds 360° per lap to the covered arc. It compares actual `gal/°` pace to the pace needed and recommends a new pivot setting and/or pump % by **scaling the current dial by the factor** — so calibration error cancels. Guards near-empty ("essentially empty") and over-limit (>100%) cases. Also derives actual **GPH** and **°/hr** between two logged checks, flagging pivot **stopped / idle / refill**. Auto-saves a snapshot to the activity log.
 
 ## Features
-Find pivot speed · Find pump setting · On-track check · Log & history (log position+gallons → application profile, dry-wedge detection, Christiansen uniformity, season totals, CSV export) · Notes & photos (photos in IndexedDB, device-only) · Activity log (automatic audit trail) · Backup/Restore (JSON payload `v3`) · Cloud sync.
+Find pivot speed · Find pump setting · On-track check (incl. multi-revolution passes) · Log & history (log position+gallons → application profile, dry-wedge detection, Christiansen uniformity, season totals, CSV export) · Notes & photos (notes tagged to a pivot; photos compressed and cloud-synced, cached in IndexedDB) · Activity log (automatic audit trail, synced) · Backup/Restore (JSON payload `v4`) · Cloud sync.
 
 ## Calibrations (East Young confirmed against AgSense telemetry: ~9.7–9.9 hr@100% and ~425 GPM)
 | Pivot | Mode | cal | deg | pump GPH | tank | GPM | acres |
@@ -33,9 +33,9 @@ Find pivot speed · Find pump setting · On-track check · Log & history (log po
 If the tank runs dry before the pass finishes, the missed wedge (degrees that got water only) should get roughly **double the normal rate** on the next pass to even out the application (its own share plus the share it missed).
 
 ## Storage & sync
-- Working store is browser `localStorage` (offline-first). Free-form note photos are in IndexedDB (device-only).
+- Working store is browser `localStorage` (offline-first); photos cache in IndexedDB.
 - **Cloud sync:** Firebase Firestore, email/password auth, local-first. The full state (the `v4` backup payload: pumps/pivots/passes/actlog/notes-meta/**tanks**/selIdx) is mirrored to one Firestore doc per user; syncs across devices and works offline. `cloudMaybePush()` (debounced) pushes; `onSnapshot` pulls; last-write-wins; a pre-sync safety copy is stashed before applying remote.
-- **Tank photos:** `tanks[]` holds 5 tanks, each with one rolling latest photo (`photoId`). Updating a tank's photo replaces (deletes) the prior one. Photos are compressed (~1100px, q0.6) and stored as their own Firestore docs at `users/{uid}/images/{imgId}` (kept well under the 1 MB doc limit, free Spark plan). `getImg()` reads local IndexedDB cache first, falls back to the cloud doc and caches it. Note photos remain device-only.
+- **Photos:** attached to notes. Compressed (~1100px, q0.6), written to IndexedDB and attached to the note immediately, then uploaded in the background as their own Firestore docs at `users/{uid}/images/{imgId}` (kept well under the 1 MB doc limit, free Spark plan; Firestore queues the write offline). Never `await` the cloud upload before attaching — offline, that promise doesn't resolve until signal returns, and the photo would silently never attach. `getImg()` reads local IndexedDB cache first, falls back to the cloud doc and caches it. (The old separate Tank-photos UI was removed; `tanks[]` data and images are preserved in the payload so nothing is orphaned.)
 - **Security rule** must use the recursive form so it covers the images subcollection:
   `match /users/{uid}/{document=**} { allow read, write: if request.auth != null && request.auth.uid == uid; }`
 

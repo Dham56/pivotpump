@@ -265,7 +265,7 @@
       <span class="chev">▾</span>
     </div>
     <div class="body">
-      <p class="muted" style="margin-top:10px">A running record of changes you make in the app — pump &amp; pivot edits, passes, calibrations, restores — so you can look back and figure out what happened. Saved on this device only.</p>
+      <p class="muted" style="margin-top:10px">A running record of changes you make in the app — pump &amp; pivot edits, passes, calibrations, restores — so you can look back and figure out what happened. Syncs to your other devices when you're signed in to Cloud sync.</p>
       <div id="actList"></div>
       <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
         <button class="ghost sm" id="copyLog">Copy log</button>
@@ -413,6 +413,12 @@
         <input id="t_current" type="number" step="any" inputmode="decimal">
       </div>
     </div>
+    <div class="row" id="lapRow" style="display:none">
+      <div>
+        <label>Full laps already completed <span class="hint">(multi-revolution pass — on lap 2 of a 720° pass, enter 1)</span></label>
+        <input id="t_laps" type="number" step="1" min="0" inputmode="numeric" value="0">
+      </div>
+    </div>
     <div class="row">
       <div>
         <label id="t_speedlabel">Current pivot setting</label>
@@ -504,10 +510,10 @@ const ACRE_FT_GAL = 325851;
    pivot.pump = index into pumps[];  pump.cap = GPH at a 1.0 setting          */
 const SEED_PUMPS = [
   {name:"Switzer pump",    cap:36},
-  {name:"Spanjer pump",    cap:55},
+  {name:"Spanjer pump",    cap:18},
   {name:"HBF pump",        cap:55},
-  {name:"East Young pump", cap:30},
-  {name:"West Young pump", cap:18},
+  {name:"East Young pump", cap:55},
+  {name:"West Young pump", cap:30},
 ];
 const SEED_PIVOTS = [
   {name:"Switzer",    mode:"depth", cal:101,    deg:338, pump:0, tank:1450, gpm:550, acres:117,   defSpeed:0.30},
@@ -653,7 +659,9 @@ function pumpName(p){ const pu=pumps[p.pump]; return pu? pu.name : "—"; }
 
 function hoursToDHM(h){
   if(!isFinite(h)||h<0) return "—";
-  const days=Math.floor(h/24), rem=h-days*24, hr=Math.floor(rem), min=Math.round((rem-hr)*60);
+  let min=Math.round(h*60);
+  const days=Math.floor(min/1440); min-=days*1440;
+  const hr=Math.floor(min/60); min-=hr*60;
   let s=""; if(days) s+=days+"d "; s+=hr+"h"; if(min) s+=" "+min+"m"; return s;
 }
 function finishStamp(h,startMs){
@@ -931,15 +939,18 @@ function computePump(){
     </div>${warn}`;
 }
 
-// degrees covered = angular travel from begin to current in the chosen direction
+// degrees covered = angular travel from begin to current in the chosen direction,
+// plus 360° per completed lap for multi-revolution passes
 const mod360=x=>((x%360)+360)%360;
 function arcProgress(){
   const total=num($("t_total")), begin=num($("t_begin")), current=num($("t_current"));
   const dir=$("t_dir").value;
+  const laps=Math.max(parseInt(($("t_laps")||{}).value,10)||0,0);
   if(![total,begin,current].every(isFinite)||total<=0) return null;
   let covered = dir==="rev" ? mod360(begin-current) : mod360(current-begin);
+  covered+=laps*360;
   covered=Math.min(covered,total);
-  return {total,covered,remain:Math.max(total-covered,0),begin,current,dir};
+  return {total,covered,remain:Math.max(total-covered,0),begin,current,dir,laps};
 }
 
 let lastTrack=null, trackAutoTimer=null, lastAutoTrackMsg="", lastAutoTime="";
@@ -954,10 +965,12 @@ function computeTrack(){
   const p=pivots[selIdx];
   const orig=num($("t_orig")), cur=num($("t_tank"));
   const out=$("trackResult"), wrap=$("logCheckWrap");
+  // the lap counter only matters (and only shows) on passes longer than one revolution
+  { const lr=$("lapRow"), tt=num($("t_total")); if(lr) lr.style.display=(isFinite(tt)&&tt>360)?"flex":"none"; }
   computeAccuracy(); // optional breakdown runs independently
   const ap=arcProgress();
   if(!ap||![orig,cur].every(isFinite)||orig<=0||cur<0||cur>orig){ out.innerHTML=""; if(wrap)wrap.style.display="none"; lastTrack=null; clearTrackAuto(); return; }
-  const {total,covered,remain,begin,current,dir}=ap;
+  const {total,covered,remain,begin,current,dir,laps}=ap;
   const dsym = dir==="rev"?"⟲ rev":"⟳ fwd";
   if(covered<=0||remain<=0){ out.innerHTML=`<div class="verdict warn" style="margin-top:12px">Enter beginning &amp; current position (so there's some progress) and a drop in gallons, and I'll measure your actual pace.</div>`; if(wrap)wrap.style.display="none"; lastTrack=null; clearTrackAuto(); return; }
 
@@ -1031,7 +1044,7 @@ function computeTrack(){
     <div class="verdict ${cls}">${head}${fix}</div>
     <div class="result" style="margin-top:12px">
       <div class="grid2">
-        ${gridRow("Position",fmt(begin,0)+"° → "+fmt(current,0)+"° ("+dsym+")")}
+        ${gridRow("Position",fmt(begin,0)+"° → "+fmt(current,0)+"° ("+dsym+(laps?", lap "+(laps+1):"")+")")}
         ${gridRow("Degrees to cover",fmt(remain,0)+"° left of "+fmt(total,0)+"°")}
         ${gridRow("Fertilizer used",fmt(used,0)+" gal ("+fmt(usedFrac*100,0)+"%)")}
         ${gridRow("Pass completed",fmt(covered,0)+"° ("+fmt(doneFrac*100,0)+"%)")}
@@ -1063,7 +1076,7 @@ function computeTrack(){
     else if(sinceLast.status==="refill") ratePart=`; refilled since last check (rate skipped)`;
   }
   lastTrack={pivotObj:p, snap:{covered,gal:cur},
-    msg:`On-track ${p.name}: ${fmt(begin,0)}°→${fmt(current,0)}° ${dsym}, covered ${fmt(covered,0)}°, ${fmt(remain,0)}° to cover; ${fmt(cur,0)}/${fmt(orig,0)} gal; pace ${fmt(galPerDeg,2)} gal/°${ratePart}; ${endTxt}${rec}`};
+    msg:`On-track ${p.name}: ${fmt(begin,0)}°→${fmt(current,0)}° ${dsym}${laps?" (lap "+(laps+1)+")":""}, covered ${fmt(covered,0)}°, ${fmt(remain,0)}° to cover; ${fmt(cur,0)}/${fmt(orig,0)} gal; pace ${fmt(galPerDeg,2)} gal/°${ratePart}; ${endTxt}${rec}`};
 
   // auto-save to the audit trail once the numbers settle (deduped) — no button to forget
   clearTrackAuto();
@@ -1389,14 +1402,14 @@ MODEL:
 - Pivot speed->time, two conventions per pivot. Timer pivots: cal = hours for a full 360deg pass at 100% timer; pass time = cal*100/timer% * deg/360. Depth pivots: cal = hours to apply 1 inch over 360deg; pass time = cal*inches * deg/360. East/West Young are timer; Switzer/Spanjer/HBF are depth.
 - "Finished properly" = tank empties exactly as the pass completes. Precip uses actual pass hours; an acre-foot = 325,851 gal.
 
-ON-TRACK CHECK (observation-based, ignores doubtful dial values): inputs are starting gal, current gal, total degrees, beginning+current position and direction (forward=clockwise). Degrees covered = angular travel in that direction. Compares actual gal/deg pace to the pace needed; recommends a new pivot setting and/or pump % by scaling the CURRENT dial by the factor, so calibration error cancels. Guards near-empty and over-100% cases. Also derives actual GPH and deg/hr between two logged checks (flags pivot stopped/idle/refill). Auto-saves a snapshot to the activity log.
+ON-TRACK CHECK (observation-based, ignores doubtful dial values): inputs are starting gal, current gal, total degrees, beginning+current position and direction (forward=clockwise). Degrees covered = angular travel in that direction; for passes over 360deg (multi-revolution, e.g. 720deg on one tank) a "full laps already completed" field appears and adds 360deg per lap. Compares actual gal/deg pace to the pace needed; recommends a new pivot setting and/or pump % by scaling the CURRENT dial by the factor, so calibration error cancels. Guards near-empty and over-100% cases. Also derives actual GPH and deg/hr between two logged checks (flags pivot stopped/idle/refill). Auto-saves a snapshot to the activity log.
 
 SEASON FERTIGATION PLAN: each pivot carries a seasonTarget (gallons of product to inject across the year, from the agronomist's field plan), a seasonProduct label, and seasonApplied (gallons put on so far, recorded directly since the user tracks totals rather than logging each pass). An always-visible progress bar under the pivot name shows applied-to-date / target and gallons-to-go; applied = seasonApplied baseline + any logged passes. All three are editable in the pivot's Edit panel. 2026 plan (target / applied-as-of-6-23): East Young 8205/2750 (28-0-0-5S), West Young 8006/2800 (28-0-0-5S), HBF 8251/2570 (26-0-3-3), Spanjer 7922/2200 (26-0-3-3), Switzer 6799/1400 (28-0-0-5S); seeded by pivot name.
 
 FEATURES: Find pivot speed, Find pump setting, On-track check, Log & history (log position+gallons -> application profile, dry-wedge detection, Christiansen uniformity, season totals vs target, CSV), Notes & photos (timestamped notes tagged to a pivot; attach photos which now compress and cloud-sync like everything else — the old separate Tank photos section was removed and folded into notes), Activity log (automatic audit trail), Backup/Restore, and Firebase cloud sync (email/password, local-first, syncs phone<->Mac, offline-capable; per-image compressed photos stored as Firestore docs under users/{uid}/images).
 
 CALIBRATIONS (East Young confirmed against AgSense telemetry: ~9.7-9.9 hr@100% and ~425 GPM):
-- East Young: timer, cal 9.72 hr@100%, 360deg, pump ~55 GPH, tank 3000, 425 GPM, 122 ac.
+- East Young: timer, cal 9.72 hr@100%, 360deg, pump rated ~55 GPH but MEASURED ~46 GPH real (July 2026), tank 3000, 425 GPM, 122 ac. NOTE: this pivot runs faster than linear at low timer % (~5.5 deg/hr at 11% dial vs 4.07 predicted) — trust on-track checks over the dial.
 - West Young: timer, cal 14.88, 360deg, pump 30 GPH, tank 3000, 500 GPM, 121.4 ac.
 - Switzer: depth, cal 101 hr/inch, 338deg, pump 36, tank 1450, 550 GPM, 117 ac.
 - Spanjer: depth, cal 107.93, 360deg, pump 18, tank 1450, 550 GPM, 117.6 ac.
@@ -1415,7 +1428,7 @@ function buildHelpBundle(){
   const sync=($("syncPill")?$("syncPill").textContent:"?")+" "+($("syncStatus")?$("syncStatus").textContent:"");
   const recent=[...actlog].slice(-15).map(e=>new Date(e.t).toLocaleString()+"  "+e.msg).join("\n");
   return `PivotPump — help request
-(Replace this line with your question or what's going wrong.)
+(If this arrived with no question attached: it's the auto-sent context bundle from Doug's PivotPump app — confirm you can see his setup, then ask what's going on. Doug: type your question as the next message, or replace this line before sending.)
 
 --- context (auto-attached so Claude has the full picture) ---
 Selected pivot: ${p.name} | ${p.mode} | cal ${p.cal} | ${p.deg}° | pump "${pu.name}" cap ${pu.cap} GPH | tank ${p.tank} | gpm ${p.gpm} | acres ${p.acres}${isFinite(p.seasonTarget)&&p.seasonTarget>0?` | season ${fmt(appliedForPivot(p.name),0)}/${fmt(p.seasonTarget,0)} gal applied`:""}${p.fieldNote?`\nField note for ${p.name}: ${p.fieldNote}`:""}
@@ -1539,7 +1552,7 @@ async function updateTankPhoto(i,e){
     const d=await resizeImage(f,1100,0.6);
     const oldId=t.photoId, id="im"+Math.random().toString(36).slice(2,10);
     await idbPut(id,d);
-    if(window.PP_cloudPutImage) await window.PP_cloudPutImage(id,d);
+    if(window.PP_cloudPutImage) window.PP_cloudPutImage(id,d);   // background — don't block on signal
     t.photoId=id; t.updated=Date.now();
     if(oldId){ idbDel(oldId); if(window.PP_cloudDeleteImage) window.PP_cloudDeleteImage(oldId); }
     saveAll(); renderTanks();
@@ -1616,12 +1629,14 @@ function wireNotes(){
     const files=[...e.target.files]; e.target.value=""; $("noteMsg").textContent="Adding photo…";
     for(const f of files){
       try{
-        const d=await resizeImage(f,1100,0.6);              // same compression as tank photos (stays <1MB for the cloud)
+        const d=await resizeImage(f,1100,0.6);              // compressed to stay <1MB for the cloud
         const id="im"+Math.random().toString(36).slice(2,10);
         await idbPut(id,d);
-        if(window.PP_cloudPutImage) await window.PP_cloudPutImage(id,d);   // sync the blob like tank photos
+        // attach locally FIRST — the cloud upload runs in the background (Firestore queues it
+        // offline and sends when signal returns), so a no-signal field never loses a photo
         draft.imgs.push(id); saveDraft(); renderDraftThumbs();
-        $("noteMsg").textContent = window.PP_cloudPutImage ? "✓ Photo added (syncing)." : "✓ Photo added (this device — sign in to sync).";
+        if(window.PP_cloudPutImage) window.PP_cloudPutImage(id,d);
+        $("noteMsg").textContent = window.PP_cloudPutImage ? "✓ Photo added (syncs when you have signal)." : "✓ Photo added (this device — sign in to sync).";
       }catch(err){ $("noteMsg").textContent="Couldn't read one image (try a JPG/PNG)."; }
     }
   };
