@@ -963,7 +963,7 @@ const HISTORY_2026 = {
           readings:[{when:"7/12 8:15p",pos:7,gal:1100,src:"on-track"},{when:"7/14 7:26a",pos:112,gal:75,src:"note — finished"}],
           applied:1375, analysis:"Finished the circle at 112° with 75 gal left.", flags:["threw an 'Auto Stop Safety' fault at the 7/12 start (cleared)"] } ] } ],
 };
-function renderHistory(){
+function renderHistoryTab(){
   const host=$("historyBody"); if(!host) return;
   const H=HISTORY_2026, g=n=>isFinite(n)?Math.round(n).toLocaleString():"—";
   let total=0, tgt=0;
@@ -1005,7 +1005,7 @@ document.querySelectorAll(".tabs button").forEach(btn=>{
     document.querySelectorAll(".card.mode").forEach(c=>c.hidden=c.dataset.mode!==m);
     if(m==="log") renderLog();
     if(m==="notes"){ renderNotes(); renderTanks(); }
-    if(m==="history") renderHistory();
+    if(m==="history") renderHistoryTab();
   };
 });
 
