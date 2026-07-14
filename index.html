@@ -490,6 +490,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">
       <button class="ghost sm" id="copyNotesBtn">📋 Copy notes</button>
+      <button class="ghost sm" id="exportPdfBtn">📄 PDF for Claude (with photos)</button>
       <span class="muted" id="copyNotesMsg"></span>
     </div>
     <div id="notesList" style="margin-top:10px"></div>
@@ -1638,10 +1639,78 @@ function copyNotes(){
   const ok=()=>{ if(msg) msg.textContent="✓ Copied all "+notes.length+" notes — paste anywhere."; };
   if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok,()=>fallbackCopy(text,ok)); else fallbackCopy(text,ok);
 }
+/* ---- PDF export for Claude: status board + every note's TEXT AND PHOTOS in one file ----
+   Photos don't survive a text paste, so this bakes them into a PDF Claude can read visually. */
+function loadJsPDF(){
+  return new Promise((res,rej)=>{
+    if(window.jspdf&&window.jspdf.jsPDF) return res(window.jspdf.jsPDF);
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    s.onload=()=>{ (window.jspdf&&window.jspdf.jsPDF)?res(window.jspdf.jsPDF):rej(new Error("PDF library didn't initialize")); };
+    s.onerror=()=>rej(new Error("couldn't download the PDF library (need internet)"));
+    document.head.appendChild(s);
+  });
+}
+function imgSize(dataURL){
+  return new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res({w:im.naturalWidth||1,h:im.naturalHeight||1}); im.onerror=()=>rej(new Error("bad image")); im.src=dataURL; });
+}
+// ASCII-safe version of the status board (jsPDF standard fonts can't render emoji/•/►)
+function pdfSafeStatus(){
+  return pivots.map((p,i)=>{
+    const pu=pumps[p.pump]||{}, tgt=p.seasonTarget, applied=appliedForPivot(p.name);
+    const season=(isFinite(tgt)&&tgt>0)?"  season "+fmt(applied,0)+"/"+fmt(tgt,0)+" gal ("+fmt(tgt-applied,0)+" left)"+(p.seasonProduct?" "+p.seasonProduct:""):"";
+    const done=passes.filter(x=>x.status==="done"&&x.pivot===p.name).length;
+    const active=passes.some(x=>x.status!=="done"&&x.pivot===p.name);
+    const passInfo=active?"  [PASS IN PROGRESS]":(done?"  "+done+" logged pass"+(done!==1?"es":""):"");
+    return (i===selIdx?"> ":"  ")+p.name+" ["+p.mode+"] pump \""+(pu.name||"?")+"\" "+pu.cap+" GPH, tank "+p.tank+", last "+p.deg+" deg"+season+passInfo+(p.fieldNote?"\n     NOTE: "+p.fieldNote:"");
+  }).join("\n");
+}
+async function exportClaudePDF(){
+  const msg=$("copyNotesMsg"); const set=t=>{ if(msg) msg.textContent=t; };
+  set("Building PDF… (loading library)");
+  let jsPDF; try{ jsPDF=await loadJsPDF(); }catch(e){ set("Couldn't build PDF — "+(e.message||e)+". Try again with signal."); return; }
+  try{
+    const doc=new jsPDF({unit:"pt",format:"letter"});
+    const M=40, PW=doc.internal.pageSize.getWidth(), PH=doc.internal.pageSize.getHeight(), UW=PW-2*M;
+    let y=M;
+    const para=(t,size=10)=>{ doc.setFontSize(size); const lines=doc.splitTextToSize(String(t==null?"":t),UW); for(const ln of lines){ if(y>PH-M){ doc.addPage(); y=M; } doc.text(ln,M,y); y+=size+3; } };
+    const heading=(t,size=14)=>{ if(y>PH-M-size){ doc.addPage(); y=M; } doc.setFont("helvetica","bold"); doc.setFontSize(size); doc.text(t,M,y); y+=size+8; doc.setFont("helvetica","normal"); };
+    doc.setFont("helvetica","bold"); doc.setFontSize(18); doc.text("PivotPump — Report for Claude",M,y); y+=24;
+    doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.text("Generated "+new Date().toLocaleString(),M,y); y+=20;
+    heading("All pivots — current state"); para(pdfSafeStatus()); y+=6;
+    heading("Pumps"); para(pumps.map(x=>x.name+": "+x.cap+" GPH").join("\n")); y+=6;
+    heading("Recent activity (last 40)"); para([...actlog].slice(-40).map(e=>new Date(e.t).toLocaleString()+"  "+e.msg).join("\n")||"(none)");
+    doc.addPage(); y=M;
+    heading("Notes & photos ("+notes.length+")",16);
+    const ordered=[...notes].sort((a,b)=>a.t-b.t);
+    for(let i=0;i<ordered.length;i++){
+      const n=ordered[i]; set("Building PDF… note "+(i+1)+"/"+ordered.length+" (embedding photos)");
+      const d=new Date(n.t).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"});
+      if(y>PH-M-40){ doc.addPage(); y=M; }
+      doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.text("["+(n.pivot||"untagged")+" - "+d+"]",M,y); y+=15; doc.setFont("helvetica","normal");
+      if(n.text) para(n.text);
+      for(const id of (n.imgs||[])){
+        try{
+          const data=await getImage(id);
+          if(!data){ para("[photo unavailable — not synced to this device]"); continue; }
+          const sz=await imgSize(data);
+          let w=Math.min(UW,380), h=w*(sz.h/sz.w); const maxH=PH-2*M;
+          if(h>maxH){ h=maxH; w=h*(sz.w/sz.h); }
+          if(y+h>PH-M){ doc.addPage(); y=M; }
+          doc.addImage(data, (data.indexOf("image/png")>=0?"PNG":"JPEG"), M, y, w, h); y+=h+8;
+        }catch(e){ para("[photo could not be embedded]"); }
+      }
+      y+=10;
+    }
+    doc.save("pivotpump-report.pdf");
+    set("✓ PDF saved to Downloads — give that file to Claude (it has the photos).");
+  }catch(e){ set("PDF export error: "+(e&&e.message||e)); }
+}
 function wireNotes(){
   $("noteText").addEventListener("input",e=>{ draft.text=e.target.value; saveDraft(); });
   if($("notePivot")) $("notePivot").addEventListener("change",e=>{ draft.pivot=e.target.value; saveDraft(); });
   if($("copyNotesBtn")) $("copyNotesBtn").onclick=copyNotes;
+  if($("exportPdfBtn")) $("exportPdfBtn").onclick=exportClaudePDF;
   const onNotePhoto=async e=>{
     const files=[...e.target.files]; e.target.value=""; $("noteMsg").textContent="Adding photo…";
     for(const f of files){
