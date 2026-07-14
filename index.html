@@ -308,6 +308,7 @@
     <button data-mode="track">On-track check</button>
     <button data-mode="log">Log &amp; history</button>
     <button data-mode="notes">Notes</button>
+    <button data-mode="history">History</button>
   </div>
 
   <!-- MODE: FIND PIVOT SPEED -->
@@ -499,6 +500,14 @@
       <span class="muted" id="copyNotesMsg"></span>
     </div>
     <div id="notesList" style="margin-top:10px"></div>
+  </div>
+
+  <!-- MODE: HISTORY — read-only pass history rebuilt by Claude from notes+photos. Renders a baked-in
+       const; stores nothing and touches no other data (pumps/pivots/passes/season totals untouched). -->
+  <div class="card mode" data-mode="history" hidden>
+    <h2>📖 History</h2>
+    <p class="muted">A read-only pass history rebuilt from your notes <b>and</b> tank / AgSense photos. It doesn't change your pumps, pivots, Log &amp; history, or season totals — just shows what happened.</p>
+    <div id="historyBody"></div>
   </div>
 
   <div id="lightboxHost"></div>
@@ -881,6 +890,112 @@ $("pivotSel").onchange=e=>{
   if(!$("editor").hidden) openEditor(false);
 };
 
+/* ---------- History (read-only reconstruction from notes + photos) ----------
+   Maintained by Claude from Doug's notes, tank-log photos, and AgSense screenshots.
+   Pure display of this const — writes nothing, touches no other data. */
+const HISTORY_2026 = {
+  generated: "2026-07-14",
+  note: "Rebuilt from your notes + tank-log photos + AgSense screenshots. Read-only.",
+  pivots: [
+    { name:"East Young", product:"28-0-0-5S", target:8205, applied:7000, toGo:1205,
+      summary:"~85% on. Current top-up tank (~2,800 gal) has ~500 left — heading to ~7,500.",
+      calibration:"Pump tube-test 26.3 GPH @50% → real cap ~52.6. Ground speed FLOORED ~5.5°/hr from 9–12.5% (0.5\"); 19%→0.31\". Non-linear at low % — trust on-track checks, not the dial.",
+      passes:[
+        { title:"Pass 1 — first tank (ran dry)", when:"mid-June", settings:"2,750 gal, aiming full 360°",
+          readings:[{when:"ended",pos:351,gal:0,src:"note"}], applied:2750,
+          analysis:"Emptied at 351° — left a ~15° wedge (351°→6°) that got water only.", flags:["dry wedge 351°→6°"] },
+        { title:"Wedge make-up", when:"~Jun 28", settings:"pump 100%, timer 8.9%, ran 350°→6°",
+          readings:[{when:"6/28",pos:6,gal:0,src:"note"}], applied:250,
+          analysis:"Over-fed the wedge at ~15.6 gal/° (≈2× the 8.0 the main arc got). Wedge squared up." },
+        { title:"Pass 2 — lean 2nd tank", when:"Jun 28 – Jul 1", settings:"2,500 gal real (2,350 entered as hedge), 6°→350°, pump 50%, timer 11%",
+          readings:[{when:"start",pos:6,gal:2500,src:"note"},{when:"6/30 5:57p",pos:265,gal:1250,src:"note"},{when:"7/1 10:00a",pos:350,gal:800,src:"shut off"}],
+          applied:1700, analysis:"Ran LEAN ~4.4 gal/° vs planned ~6.8 (pump ~23 GPH not 27.5; pivot effectively ~14% not 11%). Fert shut off with 800 left.", flags:["main arc under-dosed"] },
+        { title:"Pass 3 — full-circle top-up", when:"Jul 10 – (running)", settings:"~2,800 gal (800 leftover topped off), start 120°, ran 19%/100% then reset to 10%/9.5% pump",
+          readings:[{when:"7/10 1:00p",pos:120,gal:2800,src:"note"},{when:"7/11 12:00p",pos:305,gal:1625,src:"note+AgSense 305.7°"},{when:"7/12 9:27a",pos:120,gal:500,src:"note+AgSense 120.3°"}],
+          applied:2300, analysis:"Light top-up to bring the arc up to ~2 doses. ~500 gal left, finishing at 10% timer / 9.5% pump." } ] },
+
+    { name:"West Young", product:"28-0-0-5S", target:8006, applied:7250, toGo:750,
+      summary:"~90% on — nearly done. Tank log: 8,000 needed / 7,250 pumped / 750 to go.",
+      calibration:"LINEAR & accurate (opposite of East Young): 32%→0.41\", 46.6 hr/rev — matches the app's cal exactly. Trust its dial.",
+      passes:[
+        { title:"Baseline", when:"through late June", settings:"hand-entered", readings:[], applied:2800,
+          analysis:"Tank log 'Pumped 2,800'. Possible 60–70° unfertilized wedge from the 6/19 dry-out at 297° — never confirmed made up.", flags:["possible old wedge ~297°→start"] },
+        { title:"Two-revolution pass", when:"Jun 28 – Jul 3", settings:"3,000 gal, 720° from 100°, fert pump set to 11%",
+          readings:[{when:"6/30 5:36p",pos:360,gal:1900,src:"note (400+1,500 two tanks)"},{when:"7/3 11:00a",pos:335,gal:500,src:"note"}],
+          applied:3000, analysis:"Two full laps on one 3,000-gal fill; emptied out." },
+        { title:"One-lap pass", when:"Jul 10 – 12", settings:"1,400 gal, one 360° from 115°, pump 100%, ~32% timer",
+          readings:[{when:"7/11 11:49a",pos:299,gal:790,src:"AgSense 299.2°/32%/0.40\""},{when:"7/12 9:46a",pos:97,gal:100,src:"AgSense 97.0°/30%/0.43\""}],
+          applied:1400, analysis:"Clean single lap. ~750 gal left to hit the 8,006 target." } ] },
+
+    { name:"HBF", product:"26-0-3-3", target:8251, applied:2570, toGo:5681,
+      summary:"⚠️ THE LAGGARD — only 31% on. No fertigation pass since 6/7. The planned 1,450-gal two-lap (0.6\", pump 27%) still hasn't run.",
+      calibration:"Pump never field-measured (app carries 55 GPH rated; unverified). On-track check on the next pass = the missing data point.",
+      passes:[
+        { title:"Pass 1", when:"Jun 2", settings:"", readings:[{when:"6/2",pos:null,gal:1450,src:"tank log"}], applied:1450, analysis:"Tank log 'Pumped 6/2 1,450'." },
+        { title:"Pass 2", when:"Jun 7", settings:"", readings:[{when:"6/7",pos:null,gal:1120,src:"tank log"}], applied:1120, analysis:"Tank log 'Pumped 6/7 1,120'. Total pumped to date = 2,570." },
+        { title:"Leak event (no application)", when:"Jul 8", settings:"", readings:[], applied:0,
+          analysis:"~250–300 gal leaked at the pump/well while a 6/13 tank sat; dealer redelivered. Net still only 2,570 applied. A 1,450 tank is staged for the next pass.", flags:["leak ~250–300 gal wasted","behind — needs a pass"] } ] },
+
+    { name:"Spanjer", product:"26-0-3-3", target:7922, applied:4300, toGo:3622,
+      summary:"~54% on. Baseline was higher than first thought — tank log shows ~2,600 early (not 2,200). Two-rev pass in progress.",
+      calibration:"0.65\" depth → ~68 hr/rev; pump 18 GPH (really ~19).",
+      passes:[
+        { title:"Early passes", when:"Jun 2 & Jun 7", settings:"", readings:[{when:"6/2",pos:null,gal:1400,src:"tank log"},{when:"6/7",pos:null,gal:1200,src:"tank log (1,400−200 leaked)"}], applied:2600,
+          analysis:"Tank log corrects the hand-entered 2,200 baseline up to ~2,600." },
+        { title:"Single-tank pass", when:"~Jun 25 – Jul 5", settings:"1,400 gal, from 187°, .7\" (ran .6\" until reset), pump 50%",
+          readings:[{when:"7/1 7:30p",pos:105,gal:910,src:"note"},{when:"7/2 10:40a",pos:182,gal:780,src:"note"},{when:"7/3 7:45a",pos:287,gal:510,src:"note"},{when:"7/5 11:00a",pos:340,gal:400,src:"note"}],
+          applied:1400, analysis:"Emptied out over the pass.", flags:["pump didn't restart with pivot after a stop — had to cycle the switch"] },
+        { title:"Two-revolution pass", when:"Jul 12 – (running)", settings:"1,400 gal, 720° from 68°, pump 55%, 0.65\"",
+          readings:[{when:"7/13 7:00a",pos:176,gal:1280,src:"on-track"},{when:"7/13 7:36p",pos:244,gal:1140,src:"AgSense 244°/0.65\""}],
+          applied:260, analysis:"Running light (~1.1 gal/°) — on pace to finish with ~200+ gal leftover.", flags:["pump-off-on-restart recurred 7/5 — check pump after every start"] } ] },
+
+    { name:"Switzer", product:"28-0-0-5S", target:6799, applied:5575, toGo:1224,
+      summary:"~82% on. Two July passes done. Runs in reverse over a 338° arc (dead zone 112°→90°).",
+      calibration:"100% pump / 0.4\" → 0.42\", 40.3 hr/pass; pump 36 GPH confirmed.",
+      passes:[
+        { title:"Baseline", when:"through late June", settings:"hand-entered", readings:[], applied:1400 },
+        { title:"Reverse pass", when:"~Jun 29", settings:".4\", 100% pump, 1,500 gal start",
+          readings:[{when:"6/29",pos:null,gal:75,src:"note (ended ~75 left)"}], applied:1425, analysis:"Total pumped to 6/29 = 2,825." },
+        { title:"Pass — new fill", when:"Jul 5 – 7", settings:"1,450 gal (75 left + 1,375 delivered), .4\"/100%, 90° reverse",
+          readings:[{when:"7/5 6:38p",pos:21,gal:1150,src:"note"},{when:"7/6 10:16a",pos:240,gal:585,src:"note"},{when:"7/6 8:52p",pos:144,gal:190,src:"note"}],
+          applied:1375, analysis:"Finished ~112° with ~75 left." },
+        { title:"Pass — latest", when:"Jul 12 – 14", settings:"1,450 gal, 90° reverse, 100%/.4\"",
+          readings:[{when:"7/12 8:15p",pos:7,gal:1100,src:"on-track"},{when:"7/14 7:26a",pos:112,gal:75,src:"note — finished"}],
+          applied:1375, analysis:"Finished the circle at 112° with 75 gal left.", flags:["threw an 'Auto Stop Safety' fault at the 7/12 start (cleared)"] } ] } ],
+};
+function renderHistory(){
+  const host=$("historyBody"); if(!host) return;
+  const H=HISTORY_2026, g=n=>isFinite(n)?Math.round(n).toLocaleString():"—";
+  let total=0, tgt=0;
+  H.pivots.forEach(p=>{ total+=(+p.applied||0); tgt+=(+p.target||0); });
+  let html=`<p class="muted" style="margin-top:4px">${escapeHtml(H.note)} Generated ${H.generated}. <b>Season: ${g(total)} / ${g(tgt)} gal (${Math.round(total/tgt*100)}%)</b>.</p>`;
+  H.pivots.forEach(p=>{
+    const pct=p.target?Math.min(100,Math.round(p.applied/p.target*100)):0;
+    html+=`<div style="border:1px solid #dfe6e0;border-radius:10px;padding:12px;margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+        <b style="font-size:16px">${escapeHtml(p.name)}</b>
+        <span class="muted">${escapeHtml(p.product||"")} · ${g(p.applied)}/${g(p.target)} gal (${pct}%)${p.toGo?` · ${g(p.toGo)} to go`:""}</span></div>
+      ${p.summary?`<div class="muted" style="margin-top:4px;font-size:13px">${escapeHtml(p.summary)}</div>`:""}`;
+    (p.passes||[]).forEach(pass=>{
+      html+=`<div style="margin-top:10px;padding-left:10px;border-left:3px solid var(--green)">
+        <div><b>${escapeHtml(pass.title)}</b>${pass.when?` <span class="muted">— ${escapeHtml(pass.when)}</span>`:""}</div>
+        ${pass.settings?`<div class="muted" style="font-size:12px">${escapeHtml(pass.settings)}</div>`:""}`;
+      if(pass.readings&&pass.readings.length){
+        html+=`<div class="readlist" style="margin-top:6px">`+pass.readings.map(r=>
+          `<div class="r"><span class="c" style="flex:0 0 96px">${escapeHtml(r.when||"")}</span><span class="c" style="flex:0 0 46px">${isFinite(r.pos)?r.pos+"°":"—"}</span><span class="c" style="flex:0 0 74px">${isFinite(r.gal)?g(r.gal)+" gal":""}</span><span class="c muted" style="font-size:11px">${escapeHtml(r.src||"")}</span></div>`
+        ).join("")+`</div>`;
+      }
+      if(isFinite(pass.applied)) html+=`<div style="margin-top:4px;font-size:13px">Applied: <b>${g(pass.applied)} gal</b></div>`;
+      if(pass.analysis) html+=`<div class="muted" style="font-size:12px;margin-top:2px">${escapeHtml(pass.analysis)}</div>`;
+      if(pass.flags&&pass.flags.length) html+=`<div style="font-size:12px;margin-top:2px;color:var(--red)">⚠ ${pass.flags.map(escapeHtml).join(" · ")}</div>`;
+      html+=`</div>`;
+    });
+    if(p.calibration) html+=`<div class="muted" style="font-size:12px;margin-top:8px;padding-top:6px;border-top:1px dashed #dfe6e0">🔧 ${escapeHtml(p.calibration)}</div>`;
+    html+=`</div>`;
+  });
+  host.innerHTML=html;
+}
+
 /* ---------- tabs ---------- */
 document.querySelectorAll(".tabs button").forEach(btn=>{
   btn.onclick=()=>{
@@ -890,6 +1005,7 @@ document.querySelectorAll(".tabs button").forEach(btn=>{
     document.querySelectorAll(".card.mode").forEach(c=>c.hidden=c.dataset.mode!==m);
     if(m==="log") renderLog();
     if(m==="notes"){ renderNotes(); renderTanks(); }
+    if(m==="history") renderHistory();
   };
 });
 
