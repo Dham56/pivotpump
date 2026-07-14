@@ -1736,8 +1736,9 @@ async function readExifGPS(file){
           else if(tag===2) lat=dms(tiff+rd32(e+8));
           else if(tag===4) lon=dms(tiff+rd32(e+8));
         }
-        if(lat==null||lon==null) return null;
+        if(lat==null||lon==null||!latRef||!lonRef) return null;
         if(latRef==="S") lat=-lat; if(lonRef==="W") lon=-lon;
+        if(Math.abs(lat)<0.0001 && Math.abs(lon)<0.0001) return null;   // 0,0 = camera wrote GPS tags but had no fix — treat as no location
         return { lat:+lat.toFixed(6), lng:+lon.toFixed(6) };
       }
       off+=2+size;
