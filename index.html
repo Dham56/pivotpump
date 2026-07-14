@@ -1691,8 +1691,8 @@ async function exportClaudePDF(){
       if(n.text) para(n.text);
       for(const id of (n.imgs||[])){
         try{
-          const data=await getImage(id);
-          if(!data){ para("[photo unavailable — not synced to this device]"); continue; }
+          const data=await getImg(id);
+          if(!data){ para("[photo unavailable — not synced to this device; export from the phone that has it]"); continue; }
           const sz=await imgSize(data);
           let w=Math.min(UW,380), h=w*(sz.h/sz.w); const maxH=PH-2*M;
           if(h>maxH){ h=maxH; w=h*(sz.w/sz.h); }
