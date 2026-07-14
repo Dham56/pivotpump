@@ -1768,12 +1768,18 @@ function wireNotes(){
   if($("notePivot")) $("notePivot").addEventListener("change",e=>{ draft.pivot=e.target.value; saveDraft(); });
   if($("copyNotesBtn")) $("copyNotesBtn").onclick=copyNotes;
   if($("exportPdfBtn")) $("exportPdfBtn").onclick=exportClaudePDF;
-  const onNotePhoto=async e=>{
+  const liveGPS=()=>new Promise(res=>{ if(!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition(
+      p=>res({lat:+p.coords.latitude.toFixed(6),lng:+p.coords.longitude.toFixed(6),acc:Math.round(p.coords.accuracy||0)}),
+      ()=>res(null), {enableHighAccuracy:true,timeout:12000,maximumAge:60000}); });
+  // fromCamera = shot in-app AT the tank → grab LIVE phone GPS (Android strips EXIF from gallery pics
+  // handed to web apps, so live capture is the only reliable location on the phone).
+  const onNotePhoto=async (e,fromCamera)=>{
     const files=[...e.target.files]; e.target.value=""; $("noteMsg").textContent="Adding photo…";
+    const live = fromCamera ? await liveGPS() : null;   // one fix for the whole batch — all same tank
     for(const f of files){
       try{
-        // read the photo's own GPS BEFORE compressing (the compress step strips EXIF).
-        const g=await readExifGPS(f);
+        const g=(await readExifGPS(f)) || live;         // EXIF if it survived (desktop/iOS), else the live fix
         const d=await resizeImage(f,1100,0.6);              // compressed to stay <1MB for the cloud
         const id="im"+Math.random().toString(36).slice(2,10);
         await idbPut(id,d);
@@ -1784,12 +1790,12 @@ function wireNotes(){
                if(!draft.geo||draft.geo.src!=="photo") draft.geo={...g,src:"photo"}; } // so one "dump" note can hold many pivots
         saveDraft(); renderDraftThumbs();
         if(window.PP_cloudPutImage) window.PP_cloudPutImage(id,d);
-        $("noteMsg").textContent = (g?"✓ Photo added (📍 location from photo). ":"✓ Photo added (no GPS in this pic). ") + (window.PP_cloudPutImage ? "Syncs when you have signal." : "Sign in to sync.");
+        $("noteMsg").textContent = (g?"✓ Photo added (📍 location captured). ":"✓ Photo added (📍 no location — use the Camera button here at the tank). ") + (window.PP_cloudPutImage ? "Syncs when you have signal." : "Sign in to sync.");
       }catch(err){ $("noteMsg").textContent="Couldn't read one image (try a JPG/PNG)."; }
     }
   };
-  $("notePhotoCam").addEventListener("change",onNotePhoto);
-  $("notePhotoGal").addEventListener("change",onNotePhoto);
+  $("notePhotoCam").addEventListener("change",e=>onNotePhoto(e,true));
+  $("notePhotoGal").addEventListener("change",e=>onNotePhoto(e,false));
   $("saveNoteBtn").onclick=()=>{
     const text=(draft.text||"").trim();
     if(!text && !draft.imgs.length){ $("noteMsg").textContent="Type a note or add a photo first."; return; }
