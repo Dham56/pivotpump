@@ -606,7 +606,7 @@ function saveDraft(){ try{ localStorage.setItem(K_DRAFT,JSON.stringify(draft)); 
 function saveLog(){ try{ localStorage.setItem(K_LOG,JSON.stringify(actlog)); }catch(e){} cloudMaybePush(); }
 // ---- cloud sync bridge (talks to the Firebase module below) ----
 function syncPayload(){
-  const notesMeta = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[],geo:n.geo||null}));
+  const notesMeta = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[],geo:n.geo||null,imgGeo:n.imgGeo||null}));
   return JSON.stringify({app:"pivotpump",v:4,pumps,pivots,passes,actlog,notes:notesMeta,tanks,selIdx});
 }
 function cloudMaybePush(){ if(window.PP_cloudPush) try{ window.PP_cloudPush(syncPayload()); }catch(e){} }
@@ -1690,7 +1690,8 @@ async function exportClaudePDF(){
       if(y>PH-M-40){ doc.addPage(); y=M; }
       doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.text("["+(n.pivot||"untagged")+" - "+d+"]",M,y); y+=15; doc.setFont("helvetica","normal");
       if(n.text) para(n.text);
-      if(n.geo) para(`Location ${n.geo.src==="photo"?"(from photo — where taken)":"(where note written)"}: ${n.geo.lat}, ${n.geo.lng}${n.geo.acc?` (+/-${n.geo.acc} m)`:""}  https://maps.google.com/?q=${n.geo.lat},${n.geo.lng}`);
+      // note-level line only when there are NO per-photo coords (photoless note); otherwise the per-photo captions below are authoritative
+      if(n.geo && !(n.imgGeo && Object.keys(n.imgGeo).length)) para(`Location ${n.geo.src==="photo"?"(from photo — where taken)":"(where note written)"}: ${n.geo.lat}, ${n.geo.lng}${n.geo.acc?` (+/-${n.geo.acc} m)`:""}  https://maps.google.com/?q=${n.geo.lat},${n.geo.lng}`);
       for(const id of (n.imgs||[])){
         try{
           const data=await getImg(id);
@@ -1699,7 +1700,9 @@ async function exportClaudePDF(){
           let w=Math.min(UW,380), h=w*(sz.h/sz.w); const maxH=PH-2*M;
           if(h>maxH){ h=maxH; w=h*(sz.w/sz.h); }
           if(y+h>PH-M){ doc.addPage(); y=M; }
-          doc.addImage(data, (data.indexOf("image/png")>=0?"PNG":"JPEG"), M, y, w, h); y+=h+8;
+          doc.addImage(data, (data.indexOf("image/png")>=0?"PNG":"JPEG"), M, y, w, h); y+=h+4;
+          const pg=n.imgGeo&&n.imgGeo[id];   // print THIS photo's own location right under it, so mixed dumps sort by field
+          if(pg) para(`Photo location: ${pg.lat}, ${pg.lng}  https://maps.google.com/?q=${pg.lat},${pg.lng}`); else y+=4;
         }catch(e){ para("[photo could not be embedded]"); }
       }
       y+=10;
@@ -1768,18 +1771,19 @@ function wireNotes(){
     const files=[...e.target.files]; e.target.value=""; $("noteMsg").textContent="Adding photo…";
     for(const f of files){
       try{
-        // read the photo's own GPS BEFORE compressing (the compress step strips EXIF). First
-        // geotagged photo wins — it's the tank location, no matter when the note gets written.
+        // read the photo's own GPS BEFORE compressing (the compress step strips EXIF).
         const g=await readExifGPS(f);
-        if(g && (!draft.geo || draft.geo.src!=="photo")){ draft.geo={...g, src:"photo"}; saveDraft(); }
         const d=await resizeImage(f,1100,0.6);              // compressed to stay <1MB for the cloud
         const id="im"+Math.random().toString(36).slice(2,10);
         await idbPut(id,d);
         // attach locally FIRST — the cloud upload runs in the background (Firestore queues it
         // offline and sends when signal returns), so a no-signal field never loses a photo
-        draft.imgs.push(id); saveDraft(); renderDraftThumbs();
+        draft.imgs.push(id);
+        if(g){ (draft.imgGeo=draft.imgGeo||{})[id]={lat:g.lat,lng:g.lng};   // PER-PHOTO GPS: each pic self-locates,
+               if(!draft.geo||draft.geo.src!=="photo") draft.geo={...g,src:"photo"}; } // so one "dump" note can hold many pivots
+        saveDraft(); renderDraftThumbs();
         if(window.PP_cloudPutImage) window.PP_cloudPutImage(id,d);
-        $("noteMsg").textContent = (g?"✓ Photo added (📍 location from photo). ":"✓ Photo added. ") + (window.PP_cloudPutImage ? "Syncs when you have signal." : "Sign in to sync.");
+        $("noteMsg").textContent = (g?"✓ Photo added (📍 location from photo). ":"✓ Photo added (no GPS in this pic). ") + (window.PP_cloudPutImage ? "Syncs when you have signal." : "Sign in to sync.");
       }catch(err){ $("noteMsg").textContent="Couldn't read one image (try a JPG/PNG)."; }
     }
   };
@@ -1791,6 +1795,7 @@ function wireNotes(){
     const pv=(draft.pivot && pivots.some(p=>p.name===draft.pivot)) ? draft.pivot : ((pivots[selIdx]&&pivots[selIdx].name)||"");
     const n={id:uid(),t:Date.now(),pivot:pv,text,imgs:draft.imgs.slice()};
     if(draft.geo) n.geo=draft.geo;                          // prefer the photo's own GPS (the tank)
+    if(draft.imgGeo) n.imgGeo=draft.imgGeo;                 // per-photo coords so a mixed/untagged note still sorts by field
     const hadPhotoGeo=!!(n.geo && n.geo.src==="photo");
     notes.push(n); draft={text:"",imgs:[]}; saveDraft(); saveAll();
     $("noteText").value=""; $("noteMsg").textContent = hadPhotoGeo ? "✓ Note saved (📍 location from photo)." : "✓ Note saved.";
@@ -1807,7 +1812,7 @@ $("backupHead").onclick=()=>{
 };
 function buildBackupText(){
   // note text/meta travels; photos live in the device image store and are not included
-  const notesNoBlobs = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[],geo:n.geo||null}));
+  const notesNoBlobs = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[],geo:n.geo||null,imgGeo:n.imgGeo||null}));
   $("backupText").value = JSON.stringify({app:"pivotpump",v:4,pumps,pivots,passes,actlog,notes:notesNoBlobs,tanks,selIdx});
 }
 $("copyBackup").onclick=()=>{
