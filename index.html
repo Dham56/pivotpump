@@ -1608,7 +1608,7 @@ function renderNotes(){
     <div class="noteitem">
       <div class="nmeta"><span>${new Date(n.t).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><select data-notepivot="${n.id}" title="Which pivot this note is about">${pivotOptions(n.pivot)}</select><span data-delnote="${n.id}" style="margin-left:auto;color:var(--red);cursor:pointer;font-weight:700">Delete</span></div>
       ${n.text?`<div class="ntext">${escapeHtml(n.text)}</div>`:""}
-      ${n.geo?`<div class="muted" style="font-size:11px">📍 <a href="https://maps.google.com/?q=${n.geo.lat},${n.geo.lng}" target="_blank" rel="noopener">${n.geo.lat}, ${n.geo.lng}</a> ±${n.geo.acc} m</div>`:""}
+      ${n.geo?`<div class="muted" style="font-size:11px">📍 <a href="https://maps.google.com/?q=${n.geo.lat},${n.geo.lng}" target="_blank" rel="noopener">${n.geo.lat}, ${n.geo.lng}</a> ${n.geo.src==="photo"?"(from photo)":"(where written"+(n.geo.acc?" ±"+n.geo.acc+" m":"")+")"}</div>`:""}
       ${(n.imgs&&n.imgs.length)?`<div class="thumbs">`+n.imgs.map(id=>`<div class="th"><img data-img="${id}" alt=""></div>`).join("")+`</div>`:""}
     </div>`).join("");
   list.querySelectorAll("img[data-img]").forEach(im=>{ loadThumb(im,im.dataset.img); im.onclick=()=>openLightbox(im.dataset.img); });
@@ -1690,7 +1690,7 @@ async function exportClaudePDF(){
       if(y>PH-M-40){ doc.addPage(); y=M; }
       doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.text("["+(n.pivot||"untagged")+" - "+d+"]",M,y); y+=15; doc.setFont("helvetica","normal");
       if(n.text) para(n.text);
-      if(n.geo) para(`Location: ${n.geo.lat}, ${n.geo.lng} (+/-${n.geo.acc} m)  https://maps.google.com/?q=${n.geo.lat},${n.geo.lng}`);
+      if(n.geo) para(`Location ${n.geo.src==="photo"?"(from photo — where taken)":"(where note written)"}: ${n.geo.lat}, ${n.geo.lng}${n.geo.acc?` (+/-${n.geo.acc} m)`:""}  https://maps.google.com/?q=${n.geo.lat},${n.geo.lng}`);
       for(const id of (n.imgs||[])){
         try{
           const data=await getImg(id);
@@ -1708,18 +1708,52 @@ async function exportClaudePDF(){
     set("✓ PDF saved to Downloads — give that file to Claude (it has the photos).");
   }catch(e){ set("PDF export error: "+(e&&e.message||e)); }
 }
-// Capture the device's GPS when a note is saved. Runs in the background so it never blocks the save
-// (matches the "never rely on a manual tap" rule) — patches the note's geo when the fix arrives.
+// Pull GPS out of a photo's EXIF — the location the phone stamped when the picture was TAKEN (at the
+// tank), regardless of when the note gets typed. Self-contained (no network) so it works offline in the
+// field. Verified against a known-good geotagged JPEG. Returns {lat,lng} or null.
+async function readExifGPS(file){
+  try{
+    const buf=await file.arrayBuffer(); const dv=new DataView(buf);
+    if(dv.getUint16(0)!==0xFFD8) return null;                 // not JPEG
+    let off=2; const len=dv.byteLength;
+    while(off+4<len){
+      const marker=dv.getUint16(off); if((marker&0xFF00)!==0xFF00) break;
+      const size=dv.getUint16(off+2);
+      if(marker===0xFFE1 && dv.getUint32(off+4)===0x45786966){ // APP1 + "Exif"
+        const tiff=off+10, little=dv.getUint16(tiff)===0x4949;
+        const rd16=o=>dv.getUint16(o,little), rd32=o=>dv.getUint32(o,little);
+        const ifd0=tiff+rd32(tiff+4), n0=rd16(ifd0); let gps=0;
+        for(let i=0;i<n0;i++){ const e=ifd0+2+i*12; if(rd16(e)===0x8825){ gps=tiff+rd32(e+8); break; } }
+        if(!gps) return null;
+        const nG=rd16(gps); let latRef,lonRef,lat,lon;
+        const dms=o=>{ const a=[]; for(let k=0;k<3;k++){ const num=rd32(o+k*8),den=rd32(o+k*8+4); a.push(den?num/den:0);} return a[0]+a[1]/60+a[2]/3600; };
+        for(let i=0;i<nG;i++){ const e=gps+2+i*12, tag=rd16(e);
+          if(tag===1) latRef=String.fromCharCode(dv.getUint8(e+8));
+          else if(tag===3) lonRef=String.fromCharCode(dv.getUint8(e+8));
+          else if(tag===2) lat=dms(tiff+rd32(e+8));
+          else if(tag===4) lon=dms(tiff+rd32(e+8));
+        }
+        if(lat==null||lon==null) return null;
+        if(latRef==="S") lat=-lat; if(lonRef==="W") lon=-lon;
+        return { lat:+lat.toFixed(6), lng:+lon.toFixed(6) };
+      }
+      off+=2+size;
+    }
+    return null;
+  }catch(e){ return null; }
+}
+// Fallback only: the device's location AT SAVE TIME — reliable only if the note is written on-site.
+// Marked src:"note" so the PDF says "where written" and Claude weights it accordingly.
 function captureGeoForNote(n){
   if(!navigator.geolocation){ return; }
   const msg=$("noteMsg");
   navigator.geolocation.getCurrentPosition(
     pos=>{
-      n.geo={ lat:+pos.coords.latitude.toFixed(6), lng:+pos.coords.longitude.toFixed(6), acc:Math.round(pos.coords.accuracy||0) };
+      n.geo={ lat:+pos.coords.latitude.toFixed(6), lng:+pos.coords.longitude.toFixed(6), acc:Math.round(pos.coords.accuracy||0), src:"note" };
       saveAll();                                  // persist + cloud-sync the location
-      if(msg) msg.textContent=`✓ Note saved (📍 location captured ±${n.geo.acc} m).`;
+      if(msg) msg.textContent=`✓ Note saved (📍 where-written location ±${n.geo.acc} m — no photo GPS).`;
       renderNotes();
-      logAction(`Location tagged for note (${n.pivot}): ${n.geo.lat}, ${n.geo.lng} ±${n.geo.acc}m`);
+      logAction(`Where-written location tagged for note (${n.pivot}): ${n.geo.lat}, ${n.geo.lng} ±${n.geo.acc}m`);
     },
     err=>{ if(msg) msg.textContent="✓ Note saved (📍 no location — "+(err&&err.code===1?"allow location access to tag notes":"GPS unavailable right now")+")."; },
     { enableHighAccuracy:true, timeout:12000, maximumAge:60000 }
@@ -1734,6 +1768,10 @@ function wireNotes(){
     const files=[...e.target.files]; e.target.value=""; $("noteMsg").textContent="Adding photo…";
     for(const f of files){
       try{
+        // read the photo's own GPS BEFORE compressing (the compress step strips EXIF). First
+        // geotagged photo wins — it's the tank location, no matter when the note gets written.
+        const g=await readExifGPS(f);
+        if(g && (!draft.geo || draft.geo.src!=="photo")){ draft.geo={...g, src:"photo"}; saveDraft(); }
         const d=await resizeImage(f,1100,0.6);              // compressed to stay <1MB for the cloud
         const id="im"+Math.random().toString(36).slice(2,10);
         await idbPut(id,d);
@@ -1741,7 +1779,7 @@ function wireNotes(){
         // offline and sends when signal returns), so a no-signal field never loses a photo
         draft.imgs.push(id); saveDraft(); renderDraftThumbs();
         if(window.PP_cloudPutImage) window.PP_cloudPutImage(id,d);
-        $("noteMsg").textContent = window.PP_cloudPutImage ? "✓ Photo added (syncs when you have signal)." : "✓ Photo added (this device — sign in to sync).";
+        $("noteMsg").textContent = (g?"✓ Photo added (📍 location from photo). ":"✓ Photo added. ") + (window.PP_cloudPutImage ? "Syncs when you have signal." : "Sign in to sync.");
       }catch(err){ $("noteMsg").textContent="Couldn't read one image (try a JPG/PNG)."; }
     }
   };
@@ -1752,11 +1790,13 @@ function wireNotes(){
     if(!text && !draft.imgs.length){ $("noteMsg").textContent="Type a note or add a photo first."; return; }
     const pv=(draft.pivot && pivots.some(p=>p.name===draft.pivot)) ? draft.pivot : ((pivots[selIdx]&&pivots[selIdx].name)||"");
     const n={id:uid(),t:Date.now(),pivot:pv,text,imgs:draft.imgs.slice()};
+    if(draft.geo) n.geo=draft.geo;                          // prefer the photo's own GPS (the tank)
+    const hadPhotoGeo=!!(n.geo && n.geo.src==="photo");
     notes.push(n); draft={text:"",imgs:[]}; saveDraft(); saveAll();
-    $("noteText").value=""; $("noteMsg").textContent="✓ Note saved.";
+    $("noteText").value=""; $("noteMsg").textContent = hadPhotoGeo ? "✓ Note saved (📍 location from photo)." : "✓ Note saved.";
     renderNotes();
-    logAction(`Added note (${n.pivot})${n.imgs.length?` with ${n.imgs.length} photo${n.imgs.length>1?"s":""}`:""}${text?`: ${text.slice(0,60)}${text.length>60?"…":""}`:""}`);
-    captureGeoForNote(n);   // grab the phone's location so the note records WHERE it was taken (for pivot cross-check)
+    logAction(`Added note (${n.pivot})${n.imgs.length?` with ${n.imgs.length} photo${n.imgs.length>1?"s":""}`:""}${text?`: ${text.slice(0,60)}${text.length>60?"…":""}`:""}${hadPhotoGeo?` @${n.geo.lat},${n.geo.lng}`:""}`);
+    if(!hadPhotoGeo) captureGeoForNote(n);   // no photo GPS → fall back to live location at save (only reliable if on-site)
   };
 }
 
