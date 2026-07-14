@@ -484,13 +484,15 @@
     <div class="thumbs" id="noteThumbs"></div>
     <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
       <label class="photobtn">📷 Camera<input id="notePhotoCam" type="file" accept="image/*" capture="environment" multiple style="display:none"></label>
-      <label class="photobtn">🖼️ Gallery<input id="notePhotoGal" type="file" accept="image/*" multiple style="display:none"></label>
-      <!-- no accept= → opens Android's Files/documents picker (the "documents provider"), which keeps EXIF GPS
-           where the gallery/media picker strips it. Lets existing geotagged photos carry location into the app. -->
-      <label class="photobtn">📁 Files<input id="notePhotoFile" type="file" multiple style="display:none"></label>
+      <!-- gallery is a button (not a label) so we can warn BEFORE the picker opens, then trigger the hidden input -->
+      <button type="button" class="photobtn" id="galleryBtn">🖼️ Gallery</button>
+      <input id="notePhotoGal" type="file" accept="image/*" multiple style="display:none">
+      <!-- 📁 File: no accept= → opens the Files/documents picker; kept for attaching other files (not the GPS path) -->
+      <label class="photobtn">📁 File<input id="notePhotoFile" type="file" multiple style="display:none"></label>
       <button class="sm" id="saveNoteBtn">Save note</button>
       <span class="muted" id="noteMsg"></span>
     </div>
+    <p class="muted" style="font-size:12px;margin-top:6px">📷 <b>Camera</b> keeps your GPS location — use it at the tank. 🖼️ Gallery &amp; 📁 File don't (Android strips it).</p>
     <div style="display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">
       <button class="ghost sm" id="copyNotesBtn">📋 Copy notes</button>
       <button class="ghost sm" id="exportPdfBtn">📄 PDF for Claude (with photos)</button>
@@ -1798,8 +1800,10 @@ function wireNotes(){
     }
   };
   $("notePhotoCam").addEventListener("change",e=>onNotePhoto(e,true));
+  // warn BEFORE opening the gallery picker — those photos lose their GPS (Android strips it)
+  if($("galleryBtn")) $("galleryBtn").onclick=()=>{ if(confirm("⚠️ Gallery photos DON'T keep their GPS location — Android removes it when the app reads them.\n\nFor location, use 📷 Camera at the tank instead.\n\nAdd from gallery anyway (no location)?")) $("notePhotoGal").click(); };
   $("notePhotoGal").addEventListener("change",e=>onNotePhoto(e,false));
-  if($("notePhotoFile")) $("notePhotoFile").addEventListener("change",e=>onNotePhoto(e,false)); // Files picker → EXIF may survive
+  if($("notePhotoFile")) $("notePhotoFile").addEventListener("change",e=>onNotePhoto(e,false)); // 📁 File: other attachments
   $("saveNoteBtn").onclick=()=>{
     const text=(draft.text||"").trim();
     if(!text && !draft.imgs.length){ $("noteMsg").textContent="Type a note or add a photo first."; return; }
