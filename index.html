@@ -606,7 +606,7 @@ function saveDraft(){ try{ localStorage.setItem(K_DRAFT,JSON.stringify(draft)); 
 function saveLog(){ try{ localStorage.setItem(K_LOG,JSON.stringify(actlog)); }catch(e){} cloudMaybePush(); }
 // ---- cloud sync bridge (talks to the Firebase module below) ----
 function syncPayload(){
-  const notesMeta = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[]}));
+  const notesMeta = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[],geo:n.geo||null}));
   return JSON.stringify({app:"pivotpump",v:4,pumps,pivots,passes,actlog,notes:notesMeta,tanks,selIdx});
 }
 function cloudMaybePush(){ if(window.PP_cloudPush) try{ window.PP_cloudPush(syncPayload()); }catch(e){} }
@@ -1455,7 +1455,7 @@ Recent activity (last 40):
 ${recent||"(none)"}
 
 Recent notes (newest first):
-${[...notes].sort((a,b)=>b.t-a.t).slice(0,20).map(n=>`${new Date(n.t).toLocaleString()}${n.pivot?" ["+n.pivot+"]":""}: ${n.text||"(photo only)"}`).join("\n")||"(none)"}
+${[...notes].sort((a,b)=>b.t-a.t).slice(0,20).map(n=>`${new Date(n.t).toLocaleString()}${n.pivot?" ["+n.pivot+"]":""}: ${n.text||"(photo only)"}${n.geo?` @${n.geo.lat},${n.geo.lng}`:""}`).join("\n")||"(none)"}
 
 Full setup (for restore/debug):
 ${syncPayload()}
@@ -1608,6 +1608,7 @@ function renderNotes(){
     <div class="noteitem">
       <div class="nmeta"><span>${new Date(n.t).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><select data-notepivot="${n.id}" title="Which pivot this note is about">${pivotOptions(n.pivot)}</select><span data-delnote="${n.id}" style="margin-left:auto;color:var(--red);cursor:pointer;font-weight:700">Delete</span></div>
       ${n.text?`<div class="ntext">${escapeHtml(n.text)}</div>`:""}
+      ${n.geo?`<div class="muted" style="font-size:11px">📍 <a href="https://maps.google.com/?q=${n.geo.lat},${n.geo.lng}" target="_blank" rel="noopener">${n.geo.lat}, ${n.geo.lng}</a> ±${n.geo.acc} m</div>`:""}
       ${(n.imgs&&n.imgs.length)?`<div class="thumbs">`+n.imgs.map(id=>`<div class="th"><img data-img="${id}" alt=""></div>`).join("")+`</div>`:""}
     </div>`).join("");
   list.querySelectorAll("img[data-img]").forEach(im=>{ loadThumb(im,im.dataset.img); im.onclick=()=>openLightbox(im.dataset.img); });
@@ -1689,6 +1690,7 @@ async function exportClaudePDF(){
       if(y>PH-M-40){ doc.addPage(); y=M; }
       doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.text("["+(n.pivot||"untagged")+" - "+d+"]",M,y); y+=15; doc.setFont("helvetica","normal");
       if(n.text) para(n.text);
+      if(n.geo) para(`Location: ${n.geo.lat}, ${n.geo.lng} (+/-${n.geo.acc} m)  https://maps.google.com/?q=${n.geo.lat},${n.geo.lng}`);
       for(const id of (n.imgs||[])){
         try{
           const data=await getImg(id);
@@ -1705,6 +1707,23 @@ async function exportClaudePDF(){
     doc.save("pivotpump-report.pdf");
     set("✓ PDF saved to Downloads — give that file to Claude (it has the photos).");
   }catch(e){ set("PDF export error: "+(e&&e.message||e)); }
+}
+// Capture the device's GPS when a note is saved. Runs in the background so it never blocks the save
+// (matches the "never rely on a manual tap" rule) — patches the note's geo when the fix arrives.
+function captureGeoForNote(n){
+  if(!navigator.geolocation){ return; }
+  const msg=$("noteMsg");
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      n.geo={ lat:+pos.coords.latitude.toFixed(6), lng:+pos.coords.longitude.toFixed(6), acc:Math.round(pos.coords.accuracy||0) };
+      saveAll();                                  // persist + cloud-sync the location
+      if(msg) msg.textContent=`✓ Note saved (📍 location captured ±${n.geo.acc} m).`;
+      renderNotes();
+      logAction(`Location tagged for note (${n.pivot}): ${n.geo.lat}, ${n.geo.lng} ±${n.geo.acc}m`);
+    },
+    err=>{ if(msg) msg.textContent="✓ Note saved (📍 no location — "+(err&&err.code===1?"allow location access to tag notes":"GPS unavailable right now")+")."; },
+    { enableHighAccuracy:true, timeout:12000, maximumAge:60000 }
+  );
 }
 function wireNotes(){
   $("noteText").addEventListener("input",e=>{ draft.text=e.target.value; saveDraft(); });
@@ -1737,6 +1756,7 @@ function wireNotes(){
     $("noteText").value=""; $("noteMsg").textContent="✓ Note saved.";
     renderNotes();
     logAction(`Added note (${n.pivot})${n.imgs.length?` with ${n.imgs.length} photo${n.imgs.length>1?"s":""}`:""}${text?`: ${text.slice(0,60)}${text.length>60?"…":""}`:""}`);
+    captureGeoForNote(n);   // grab the phone's location so the note records WHERE it was taken (for pivot cross-check)
   };
 }
 
@@ -1747,7 +1767,7 @@ $("backupHead").onclick=()=>{
 };
 function buildBackupText(){
   // note text/meta travels; photos live in the device image store and are not included
-  const notesNoBlobs = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[]}));
+  const notesNoBlobs = notes.map(n=>({id:n.id,t:n.t,pivot:n.pivot,text:n.text,imgs:n.imgs||[],geo:n.geo||null}));
   $("backupText").value = JSON.stringify({app:"pivotpump",v:4,pumps,pivots,passes,actlog,notes:notesNoBlobs,tanks,selIdx});
 }
 $("copyBackup").onclick=()=>{
