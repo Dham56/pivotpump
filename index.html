@@ -1423,21 +1423,38 @@ function showToast(msg){
   const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
   document.body.appendChild(t); setTimeout(()=>t.remove(),5000);
 }
+// one-line current state for EVERY pivot — so a "how do things stand" visit has the whole board, not just the selected one
+function allPivotsStatus(){
+  return pivots.map((p,i)=>{
+    const pu=pumps[p.pump]||{}, tgt=p.seasonTarget, applied=appliedForPivot(p.name);
+    const season=(isFinite(tgt)&&tgt>0)?` | season ${fmt(applied,0)}/${fmt(tgt,0)} gal (${fmt(tgt-applied,0)} left)${p.seasonProduct?" "+p.seasonProduct:""}`:"";
+    const done=passes.filter(x=>x.status==="done"&&x.pivot===p.name).length;
+    const active=passes.some(x=>x.status!=="done"&&x.pivot===p.name);
+    const passInfo=active?" | ⏳ PASS IN PROGRESS":(done?` | ${done} logged pass${done!==1?"es":""}`:"");
+    return `${i===selIdx?"► ":"  "}${p.name} [${p.mode}] — pump "${pu.name||"?"}" ${pu.cap} GPH · tank ${p.tank} · last ${p.deg}°${season}${passInfo}${p.fieldNote?`\n     NOTE: ${p.fieldNote}`:""}`;
+  }).join("\n");
+}
 function buildHelpBundle(){
   const p=pivots[selIdx], pu=pumps[p.pump]||{};
   const sync=($("syncPill")?$("syncPill").textContent:"?")+" "+($("syncStatus")?$("syncStatus").textContent:"");
-  const recent=[...actlog].slice(-15).map(e=>new Date(e.t).toLocaleString()+"  "+e.msg).join("\n");
-  return `PivotPump — help request
-(If this arrived with no question attached: it's the auto-sent context bundle from Doug's PivotPump app — confirm you can see his setup, then ask what's going on. Doug: type your question as the next message, or replace this line before sending.)
+  const recent=[...actlog].slice(-40).map(e=>new Date(e.t).toLocaleString()+"  "+e.msg).join("\n");
+  return `PivotPump — status / help request
+(If this arrived with no question attached: it's the context bundle from Doug's PivotPump app — confirm you can see his setup below, then he wants to talk through where the pivots stand. Doug: type your question as the next message, or replace this line before sending.)
 
---- context (auto-attached so Claude has the full picture) ---
-Selected pivot: ${p.name} | ${p.mode} | cal ${p.cal} | ${p.deg}° | pump "${pu.name}" cap ${pu.cap} GPH | tank ${p.tank} | gpm ${p.gpm} | acres ${p.acres}${isFinite(p.seasonTarget)&&p.seasonTarget>0?` | season ${fmt(appliedForPivot(p.name),0)}/${fmt(p.seasonTarget,0)} gal applied`:""}${p.fieldNote?`\nField note for ${p.name}: ${p.fieldNote}`:""}
+--- ALL PIVOTS — current state (the whole board) ---
+${allPivotsStatus()}
+
+--- selected pivot (detail) ---
+${p.name} | ${p.mode} | cal ${p.cal} | ${p.deg}° | pump "${pu.name}" cap ${pu.cap} GPH | tank ${p.tank} | gpm ${p.gpm} | acres ${p.acres}${isFinite(p.seasonTarget)&&p.seasonTarget>0?` | season ${fmt(appliedForPivot(p.name),0)}/${fmt(p.seasonTarget,0)} gal applied`:""}${p.fieldNote?`\nField note for ${p.name}: ${p.fieldNote}`:""}
 Pumps: ${pumps.map(x=>x.name+" "+x.cap).join(", ")}
 Cloud sync: ${sync}
 Passes: ${passes.length} | Notes: ${notes.length} | Activity events: ${actlog.length}
 
-Recent activity:
+Recent activity (last 40):
 ${recent||"(none)"}
+
+Recent notes (newest first):
+${[...notes].sort((a,b)=>b.t-a.t).slice(0,20).map(n=>`${new Date(n.t).toLocaleString()}${n.pivot?" ["+n.pivot+"]":""}: ${n.text||"(photo only)"}`).join("\n")||"(none)"}
 
 Full setup (for restore/debug):
 ${syncPayload()}
@@ -1463,10 +1480,10 @@ $("helpBtn").onclick=()=>{
         copyHelpBundle(text).then(ok=>showToast(ok?"Couldn't open share — your details are copied. Open Claude and paste.":"Press-and-hold the page to copy your details.")); });
     return;
   }
-  // DESKTOP: copy first (finish before anything steals focus), then open Claude to paste into.
+  // DESKTOP: just copy — don't hijack to a fresh claude.ai chat. Doug pastes into his ongoing
+  // Claude session (which holds the season history), so a new context-less chat would lose all that.
   copyHelpBundle(text).then(ok=>{
-    showToast(ok?"✓ Your PivotPump details are copied — in Claude, paste with Ctrl/Cmd+V.":"Select the page text and copy it, then paste into Claude.");
-    window.open("https://claude.ai/new","_blank","noopener");
+    showToast(ok?"✓ PivotPump state copied — paste it into your Claude chat with Ctrl/Cmd+V.":"Select the page text and copy it, then paste into your Claude chat.");
   });
 };
 
