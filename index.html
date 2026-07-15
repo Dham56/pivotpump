@@ -485,9 +485,9 @@
     <div class="thumbs" id="noteThumbs"></div>
     <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
       <label class="photobtn">📷 Camera<input id="notePhotoCam" type="file" accept="image/*" capture="environment" multiple style="display:none"></label>
-      <!-- gallery is a button (not a label) so we can warn BEFORE the picker opens, then trigger the hidden input -->
-      <button type="button" class="photobtn" id="galleryBtn">🖼️ Gallery</button>
-      <input id="notePhotoGal" type="file" accept="image/*" multiple style="display:none">
+      <!-- label opens the picker directly (a confirm() first would eat the tap gesture and block the picker on mobile);
+           the GPS warning lives in the hint line below + the per-photo "no location" message -->
+      <label class="photobtn">🖼️ Gallery<input id="notePhotoGal" type="file" accept="image/*" multiple style="display:none"></label>
       <!-- 📁 File: no accept= → opens the Files/documents picker; kept for attaching other files (not the GPS path) -->
       <label class="photobtn">📁 File<input id="notePhotoFile" type="file" multiple style="display:none"></label>
       <button class="sm" id="saveNoteBtn">Save note</button>
@@ -897,7 +897,7 @@ const HISTORY_2026 = {
   generated: "2026-07-14",
   note: "Rebuilt from your notes + tank-log photos + AgSense screenshots. Read-only.",
   pivots: [
-    { name:"East Young", product:"28-0-0-5S", target:8205, applied:7000, toGo:1205,
+    { name:"East Young", product:"28-0-0-5S", target:8205, applied:7150, toGo:1055,
       summary:"~85% on. Current top-up tank (~2,800 gal) has ~500 left — heading to ~7,500.",
       calibration:"Pump tube-test 26.3 GPH @50% → real cap ~52.6. Ground speed FLOORED ~5.5°/hr from 9–12.5% (0.5\"); 19%→0.31\". Non-linear at low % — trust on-track checks, not the dial.",
       passes:[
@@ -911,8 +911,8 @@ const HISTORY_2026 = {
           readings:[{when:"start",pos:6,gal:2500,src:"note"},{when:"6/30 5:57p",pos:265,gal:1250,src:"note"},{when:"7/1 10:00a",pos:350,gal:800,src:"shut off"}],
           applied:1700, analysis:"Ran LEAN ~4.4 gal/° vs planned ~6.8 (pump ~23 GPH not 27.5; pivot effectively ~14% not 11%). Fert shut off with 800 left.", flags:["main arc under-dosed"] },
         { title:"Pass 3 — full-circle top-up", when:"Jul 10 – (running)", settings:"~2,800 gal (800 leftover topped off), start 120°, ran 19%/100% then reset to 10%/9.5% pump",
-          readings:[{when:"7/10 1:00p",pos:120,gal:2800,src:"note"},{when:"7/11 12:00p",pos:305,gal:1625,src:"note+AgSense 305.7°"},{when:"7/12 9:27a",pos:120,gal:500,src:"note+AgSense 120.3°"}],
-          applied:2300, analysis:"Light top-up to bring the arc up to ~2 doses. ~500 gal left, finishing at 10% timer / 9.5% pump." } ] },
+          readings:[{when:"7/10 1:00p",pos:120,gal:2800,src:"note"},{when:"7/11 12:00p",pos:305,gal:1625,src:"note+AgSense 305.7°"},{when:"7/12 9:27a",pos:120,gal:500,src:"note+AgSense 120.3°"},{when:"7/14 2:33p",pos:79,gal:350,src:"AgSense 79.2°/10%/0.44\""}],
+          applied:2450, analysis:"Light top-up to bring the arc up to ~2 doses. Down to ~350 gal at 79° (7/14), finishing at 10% timer / 9.5% pump — heading to ~7,500 total." } ] },
 
     { name:"West Young", product:"28-0-0-5S", target:8006, applied:7250, toGo:750,
       summary:"~90% on — nearly done. Tank log: 8,000 needed / 7,250 pumped / 750 to go.",
@@ -928,13 +928,16 @@ const HISTORY_2026 = {
           applied:1400, analysis:"Clean single lap. ~750 gal left to hit the 8,006 target." } ] },
 
     { name:"HBF", product:"26-0-3-3", target:8251, applied:2570, toGo:5681,
-      summary:"⚠️ THE LAGGARD — only 31% on. No fertigation pass since 6/7. The planned 1,450-gal two-lap (0.6\", pump 27%) still hasn't run.",
-      calibration:"Pump never field-measured (app carries 55 GPH rated; unverified). On-track check on the next pass = the missing data point.",
+      summary:"⚠️ Was the laggard (31%). Pass FINALLY started 7/14 — 2,900 gal, 0.4\", 100% pump from 271°. Check the pump early (see the running pass).",
+      calibration:"Pump never field-measured (app carries 55 GPH rated; unverified). AgSense unit 85460. The on-track check on this running pass = the missing data point.",
       passes:[
         { title:"Pass 1", when:"Jun 2", settings:"", readings:[{when:"6/2",pos:null,gal:1450,src:"tank log"}], applied:1450, analysis:"Tank log 'Pumped 6/2 1,450'." },
         { title:"Pass 2", when:"Jun 7", settings:"", readings:[{when:"6/7",pos:null,gal:1120,src:"tank log"}], applied:1120, analysis:"Tank log 'Pumped 6/7 1,120'. Total pumped to date = 2,570." },
         { title:"Leak event (no application)", when:"Jul 8", settings:"", readings:[], applied:0,
-          analysis:"~250–300 gal leaked at the pump/well while a 6/13 tank sat; dealer redelivered. Net still only 2,570 applied. A 1,450 tank is staged for the next pass.", flags:["leak ~250–300 gal wasted","behind — needs a pass"] } ] },
+          analysis:"~250–300 gal leaked at the pump/well while a 6/13 tank sat; dealer redelivered. Net still only 2,570 applied.", flags:["leak ~250–300 gal wasted"] },
+        { title:"Pass 3 — running (started Jul 14)", when:"Jul 14 4:59p – (running)", settings:"2,900 gal, from 271°, 0.4\", pump 100% (55-gal pump)",
+          readings:[{when:"7/14 4:51p",pos:270,gal:2900,src:"AgSense 85460"}], applied:0,
+          analysis:"Finally moving. COVERAGE hinges on the unmeasured pump: @55 GPH rated → only ~1.7 laps (leaves a ~100° single-dose wedge); @~46–48 → ~2 clean laps. DO AN ON-TRACK CHECK EARLY (~150–200°) to find out AND capture the HBF pump number — if running toward 1.7 laps, slow the pump or add fert.", flags:["on-track check early — coverage + pump both unknown"] } ] },
 
     { name:"Spanjer", product:"26-0-3-3", target:7922, applied:4300, toGo:3622,
       summary:"~54% on. Baseline was higher than first thought — tank log shows ~2,600 early (not 2,200). Two-rev pass in progress.",
@@ -946,8 +949,8 @@ const HISTORY_2026 = {
           readings:[{when:"7/1 7:30p",pos:105,gal:910,src:"note"},{when:"7/2 10:40a",pos:182,gal:780,src:"note"},{when:"7/3 7:45a",pos:287,gal:510,src:"note"},{when:"7/5 11:00a",pos:340,gal:400,src:"note"}],
           applied:1400, analysis:"Emptied out over the pass.", flags:["pump didn't restart with pivot after a stop — had to cycle the switch"] },
         { title:"Two-revolution pass", when:"Jul 12 – (running)", settings:"1,400 gal, 720° from 68°, pump 55%, 0.65\"",
-          readings:[{when:"7/13 7:00a",pos:176,gal:1280,src:"on-track"},{when:"7/13 7:36p",pos:244,gal:1140,src:"AgSense 244°/0.65\""}],
-          applied:260, analysis:"Running light (~1.5 gal/°; target ~1.94 to finish empty). CHECK & ADJUST AT 68° — when it comes back to the 68° start (end of lap 1, 360° done) expect ~700 gal left. That is THE spot to change pump/speed: adjusting at the lap boundary keeps the field UNIFORM (every spot gets one lap old-rate + one lap new-rate); changing mid-lap leaves a hot/lean stripe. >700 left → bump pump for lap 2; <700 → back off. In the app on-track: beginning 68°, FULL LAPS COMPLETED = 1, depth 0.65\" (NOT timer), pump 55%.",
+          readings:[{when:"7/13 7:00a",pos:176,gal:1280,src:"on-track"},{when:"7/13 7:36p",pos:244,gal:1140,src:"AgSense 244°/0.65\""},{when:"7/15 12:01p",pos:65,gal:750,src:"AgSense 64° — AT the 68° checkpoint"}],
+          applied:650, analysis:"AT THE CHECKPOINT (7/15): 65°/750 gal — on plan (~700 expected), slightly light → will finish lap 2 with ~40–70 gal leftover (your buffer). LEAVE SETTINGS AS-IS. — Running light (~1.5 gal/°; target ~1.94 to finish empty). CHECK & ADJUST AT 68° — when it comes back to the 68° start (end of lap 1, 360° done) expect ~700 gal left. That is THE spot to change pump/speed: adjusting at the lap boundary keeps the field UNIFORM (every spot gets one lap old-rate + one lap new-rate); changing mid-lap leaves a hot/lean stripe. >700 left → bump pump for lap 2; <700 → back off. In the app on-track: beginning 68°, FULL LAPS COMPLETED = 1, depth 0.65\" (NOT timer), pump 55%.",
           flags:["ADJUST AT 68° (lap boundary) — not mid-lap, or you stripe the field","pump-off-on-restart recurred 7/5 — check pump after every start"] } ] },
 
     { name:"Switzer", product:"28-0-0-5S", target:6799, applied:5575, toGo:1224,
@@ -1917,8 +1920,6 @@ function wireNotes(){
     }
   };
   $("notePhotoCam").addEventListener("change",e=>onNotePhoto(e,true));
-  // warn BEFORE opening the gallery picker — those photos lose their GPS (Android strips it)
-  if($("galleryBtn")) $("galleryBtn").onclick=()=>{ if(confirm("⚠️ Gallery photos DON'T keep their GPS location — Android removes it when the app reads them.\n\nFor location, use 📷 Camera at the tank instead.\n\nAdd from gallery anyway (no location)?")) $("notePhotoGal").click(); };
   $("notePhotoGal").addEventListener("change",e=>onNotePhoto(e,false));
   if($("notePhotoFile")) $("notePhotoFile").addEventListener("change",e=>onNotePhoto(e,false)); // 📁 File: other attachments
   $("saveNoteBtn").onclick=()=>{
