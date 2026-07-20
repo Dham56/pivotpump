@@ -496,7 +496,7 @@
     <p class="muted" style="font-size:12px;margin-top:6px">📷 <b>Camera</b> keeps your GPS location — use it at the tank. 🖼️ Gallery &amp; 📁 File don't (Android strips it).</p>
     <div style="display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">
       <button class="ghost sm" id="copyNotesBtn">📋 Copy notes</button>
-      <button class="ghost sm" id="exportPdfBtn">📄 PDF for Claude (with photos)</button>
+      <button class="ghost sm" id="exportPdfBtn">📄 Send to Drive for Claude (notes + photos)</button>
       <span class="muted" id="copyNotesMsg"></span>
     </div>
     <div id="notesList" style="margin-top:10px"></div>
@@ -1832,9 +1832,32 @@ async function exportClaudePDF(){
       }
       y+=10;
     }
-    doc.save("pivotpump-report.pdf");
-    set("✓ PDF saved to Downloads — give that file to Claude (it has the photos).");
+    // date-stamped so versions don't collide in Drive and Claude can grab the newest
+    const d=new Date();
+    const stamp=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")+"_"+String(d.getHours()).padStart(2,"0")+String(d.getMinutes()).padStart(2,"0");
+    const fname="pivotpump-report_"+stamp+".pdf";
+    await deliverPDF(doc, fname, set);
   }catch(e){ set("PDF export error: "+(e&&e.message||e)); }
+}
+// Hand the finished PDF off the best way the device allows. On the phone that's the native share
+// sheet (pick "Save to Drive" → it lands in Doug's Drive, which Claude reads directly — no paste).
+// Anywhere share-with-files isn't available (most desktops), fall back to a plain Downloads save.
+async function deliverPDF(doc, fname, set){
+  try{
+    const blob=doc.output("blob");
+    if(navigator.share && navigator.canShare){
+      const file=new File([blob], fname, {type:"application/pdf"});
+      if(navigator.canShare({files:[file]})){
+        try{
+          await navigator.share({title:"PivotPump report", text:"PivotPump report for Claude", files:[file]});
+          set("✓ Shared — pick Save to Drive (use dham1956@gmail.com), then tell Claude it's there.");
+          return;
+        }catch(err){ if(err&&err.name==="AbortError"){ set("Share cancelled — nothing saved. Tap again to retry."); return; } /* else fall through to download */ }
+      }
+    }
+    doc.save(fname);
+    set("✓ PDF saved to Downloads — put it in your Drive (dham1956@gmail.com) or give the file to Claude.");
+  }catch(e){ doc.save(fname); set("✓ PDF saved to Downloads — give that file to Claude (it has the photos)."); }
 }
 // Pull GPS out of a photo's EXIF — the location the phone stamped when the picture was TAKEN (at the
 // tank), regardless of when the note gets typed. Self-contained (no network) so it works offline in the
