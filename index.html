@@ -562,13 +562,27 @@ function seedSeasonTargets(){
    it feeds the season bar on top of any logged passes. Seeded once if unset, then user-owned —
    edit it in the pivot's Edit panel, or it can be bumped in code on the next deploy. */
 const SEASON_APPLIED_2026 = {
-  "East Young":2750, "West Young":2800, "HBF":2570, "Spanjer":2200, "Switzer":1400,
+  "East Young":2750, "West Young":2800, "HBF":5470, "Spanjer":2200, "Switzer":1400,
 };
 function seedSeasonApplied(){
   let changed=false;
   (pivots||[]).forEach(p=>{
     const g=SEASON_APPLIED_2026[p.name];
     if(g!=null && p.seasonApplied==null){ p.seasonApplied=g; changed=true; }
+  });
+  return changed;
+}
+/* One-time value corrections that must OVERWRITE an existing (non-null) synced value — the
+   null-guarded seed above can't. Self-healing: each fixup only fires while the field still holds
+   the exact `from` value, so it converges across every synced device and never reverts a later
+   manual edit (change it in-app to anything else and the fixup goes dormant for good). */
+const APPLIED_FIXUPS = [
+  { name:"HBF", from:2570, to:5470 },   // 2026-07-20: the 2,900-gal pass emptied 7/20 — fold it into the season bar
+];
+function fixupApplied(){
+  let changed=false;
+  (pivots||[]).forEach(p=>{
+    APPLIED_FIXUPS.forEach(f=>{ if(p.name===f.name && p.seasonApplied===f.from){ p.seasonApplied=f.to; changed=true; } });
   });
   return changed;
 }
@@ -606,7 +620,7 @@ let pumps, pivots, selIdx, passes, actlog, notes, draft, tanks;
     }
     saveAll();
   }
-  { let ch=seedSeasonTargets(); if(seedSeasonApplied()) ch=true; if(seedFieldNotes()) ch=true; if(ch) saveAll(); }
+  { let ch=seedSeasonTargets(); if(seedSeasonApplied()) ch=true; if(seedFieldNotes()) ch=true; if(fixupApplied()) ch=true; if(ch) saveAll(); }
   selIdx = parseInt(localStorage.getItem(K_SEL)||"0",10)||0;
   if(selIdx>=pivots.length) selIdx=0;
   try{ const pp=JSON.parse(localStorage.getItem(K_PASSES)); passes=Array.isArray(pp)?pp:[]; }catch(e){ passes=[]; }
@@ -629,7 +643,7 @@ function applyRemote(str){
   if(!data||!Array.isArray(data.pumps)||!Array.isArray(data.pivots)||!data.pumps.length||!data.pivots.length) return;
   try{ localStorage.setItem("pivotpump.presync.backup", syncPayload()); }catch(e){}   // safety stash
   pumps=data.pumps; pivots=data.pivots;
-  seedSeasonTargets(); seedSeasonApplied(); seedFieldNotes();   // fill targets/applied/notes on any pivot the remote payload lacks them on
+  seedSeasonTargets(); seedSeasonApplied(); seedFieldNotes(); fixupApplied();   // fill targets/applied/notes on any pivot the remote payload lacks them on, then apply one-time value corrections
   passes=Array.isArray(data.passes)?data.passes:[];
   if(Array.isArray(data.actlog)) actlog=data.actlog;
   notes=Array.isArray(data.notes)?data.notes:[];
